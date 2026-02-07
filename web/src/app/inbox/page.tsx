@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getInbox, respondToMatch } from "../../../lib/api";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 type InboxStatus =
   | "unread"
@@ -19,8 +20,6 @@ type InboxItem = {
   status: InboxStatus;
 };
 
-const helperId = "h1";
-
 const statusConfig: Record<InboxStatus, { label: string; className: string }> = {
   unread: { label: "Unread", className: "bg-leeds-teal/10 text-leeds-teal" },
   read: { label: "Read", className: "bg-gray-100 text-gray-600" },
@@ -30,17 +29,19 @@ const statusConfig: Record<InboxStatus, { label: string; className: string }> = 
 };
 
 export default function InboxPage() {
+  const session = useRequireAuth();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionIds, setActionIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    if (!session) return;
     let isMounted = true;
     setLoading(true);
     setErrorMessage(null);
 
-    getInbox(helperId)
+    getInbox(session.userId)
       .then((data) => {
         if (!isMounted) return;
         setItems(data as InboxItem[]);
@@ -59,7 +60,7 @@ export default function InboxPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [session]);
 
   const handleDecision = async (
     matchId: string,
@@ -89,6 +90,8 @@ export default function InboxPage() {
   };
 
   const itemList = useMemo(() => items, [items]);
+
+  if (!session) return null;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-fadeUp">

@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { mockMatches } from "../../../../lib/mock";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 export default function ConnectionPage() {
+  const session = useRequireAuth();
   const params = useParams<{ matchId: string }>();
   const matchIdParam = params?.matchId ?? "";
   const matchId = Array.isArray(matchIdParam) ? matchIdParam[0] : matchIdParam;
@@ -22,6 +24,8 @@ export default function ConnectionPage() {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+
+  if (!session) return null;
 
   return (
     <div className="h-[calc(100vh-140px)] min-h-[600px] flex flex-col lg:flex-row gap-6 animate-fadeUp">

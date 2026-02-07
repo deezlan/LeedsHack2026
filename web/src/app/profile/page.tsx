@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AllowedTags, type AllowedTag } from "../../../lib/tags";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const STORAGE_KEY = "leedsHack.profile";
 
@@ -18,6 +19,7 @@ const emptyProfile: ProfileDraft = {
 };
 
 export default function ProfilePage() {
+  const session = useRequireAuth();
   const [profile, setProfile] = useState<ProfileDraft>(emptyProfile);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -48,6 +50,8 @@ export default function ProfilePage() {
   }, [saveMessage]);
 
   const tagSet = useMemo(() => new Set(profile.tags), [profile.tags]);
+
+  if (!session) return null;
 
   const toggleTag = (tag: AllowedTag) => {
     setProfile((prev) => {

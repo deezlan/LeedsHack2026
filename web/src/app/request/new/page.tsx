@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRequest } from "../../../../lib/api";
 import { AllowedTags, type AllowedTag } from "../../../../lib/tags";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 type RequestFormat = "chat" | "call" | "async";
 type RequestUrgency = "low" | "medium" | "high";
@@ -109,6 +110,7 @@ const suggestTags = (description: string) => {
 };
 
 export default function NewRequestPage() {
+  const session = useRequireAuth();
   const router = useRouter();
   const [draft, setDraft] = useState<RequestDraft>(emptyDraft);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -128,6 +130,8 @@ export default function NewRequestPage() {
   }, [errorMessage]);
 
   const tagSet = useMemo(() => new Set(draft.tags), [draft.tags]);
+
+  if (!session) return null;
 
   const toggleTag = (tag: AllowedTag) => {
     setDraft((prev) => {
@@ -167,7 +171,7 @@ export default function NewRequestPage() {
     setIsSubmitting(true);
     try {
       const created = await createRequest({
-        requesterId: "user_local",
+        requesterId: session.userId,
         title: buildTitle(draft.description),
         description: draft.description.trim(),
         urgency: draft.urgency,

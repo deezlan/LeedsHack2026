@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { generateMatches, requestHelp } from "../../../../lib/api";
 import type { MatchCard } from "../../../../lib/mock";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 export default function MatchesPage() {
+  const session = useRequireAuth();
   const params = useParams<{ requestId: string }>();
   const requestIdParam = params?.requestId ?? "";
   const requestId = Array.isArray(requestIdParam)
@@ -74,6 +76,8 @@ export default function MatchesPage() {
   };
 
   const matchList = useMemo(() => matches, [matches]);
+
+  if (!session) return null;
 
   return (
     <div className="space-y-8 animate-fadeUp">

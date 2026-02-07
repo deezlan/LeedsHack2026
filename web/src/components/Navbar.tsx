@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useAuth } from "@/components/AuthProvider";
 
 const navLinks = [
   { href: "/profile", label: "Profile" },
@@ -9,6 +12,8 @@ const navLinks = [
 ];
 
 export function Navbar() {
+  const { session, isLoading, logout } = useAuth();
+
   return (
     <header className="sticky top-0 z-50 w-full bg-leeds-blue/90 backdrop-blur-md shadow-clay-card border-none supports-[backdrop-filter]:bg-leeds-blue/80">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -31,9 +36,31 @@ export function Navbar() {
           </nav>
         </div>
         <div className="flex items-center gap-4">
-          <button className="hidden md:inline-flex items-center justify-center rounded-full bg-leeds-teal px-4 py-2 text-sm font-semibold text-leeds-blue-dark shadow-sm transition-transform hover:bg-leeds-teal-dark hover:scale-105 active:scale-95">
-            Sign In
-          </button>
+          {!isLoading && (
+            session ? (
+              <div className="hidden md:flex items-center gap-3">
+                <Link
+                  href="/profile"
+                  className="text-sm font-medium text-white/80 hover:text-white transition-colors"
+                >
+                  {session.displayName}
+                </Link>
+                <button
+                  onClick={logout}
+                  className="inline-flex items-center justify-center rounded-full bg-white/10 border border-white/20 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-white/20 hover:scale-105 active:scale-95"
+                >
+                  Sign Out
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/auth"
+                className="hidden md:inline-flex items-center justify-center rounded-full bg-leeds-teal px-4 py-2 text-sm font-semibold text-leeds-blue-dark shadow-sm transition-transform hover:bg-leeds-teal-dark hover:scale-105 active:scale-95"
+              >
+                Sign In
+              </Link>
+            )
+          )}
 
           {/* Mobile Menu Button (Placeholder) */}
           <button className="md:hidden text-white">
