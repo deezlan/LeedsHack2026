@@ -258,7 +258,6 @@ export async function getInbox(helperId: Id): Promise<InboxItem[]> {
   });
 }
 
-
 async function getUserNameMap(): Promise<Record<string, string>> {
   const res = await fetch("/api/debug/store", { cache: "no-store" });
   if (!res.ok) return {};
@@ -266,4 +265,22 @@ async function getUserNameMap(): Promise<Record<string, string>> {
   const map: Record<string, string> = {};
   for (const u of data.users ?? []) map[u.id] = u.name;
   return map;
+}
+
+export async function getMatch(matchId: Id): Promise<MatchCard> {
+  if (USE_MOCKS) {
+    const match = mockMatches.find((m) => m.id === matchId);
+    if (!match) throw new Error(`Mock match not found: ${matchId}`);
+    return match;
+  }
+
+  const match = await apiFetch<Match>(`/api/matches/${matchId}`, { method: "GET" });
+
+  // optional: name map (same trick as generate)
+  const nameMap = await getUserNameMap();
+
+  return {
+    ...toMatchCard(match),
+    helperName: nameMap[match.helperId] ?? match.helperId,
+  };
 }
