@@ -3,19 +3,26 @@
 @tailwind utilities;
 
 :root {
+  /* Richer, more vibrant Leeds palette */
   --leeds-teal: 0 208 160;
-  --leeds-teal-dark: 0 168 129;
-  --leeds-blue: 0 58 82;
-  --leeds-blue-dark: 0 50 61;
+  /* Keep vibrant teal */
+  --leeds-teal-light: 100 240 210;
+  /* New highlight shade */
+  --leeds-blue: 10 35 60;
+  /* Deeper, rich navy */
+  --leeds-blue-dark: 5 20 40;
+  /* Almost black-blue */
   --leeds-bright: 26 132 199;
-  --leeds-cream: 255 251 245;
+  --leeds-cream: 248 245 242;
+  /* Slightly cooler cream for clay look */
   --leeds-surface: 255 255 255;
-  --leeds-border: 229 229 229;
+  --leeds-border: 220 220 230;
+  /* Blue-tinted border */
 
   --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 
   --color-background: rgb(var(--leeds-cream));
-  --color-foreground: #212529;
+  --color-foreground: #1a1a1a;
 }
 
 /* Custom Utilities */
