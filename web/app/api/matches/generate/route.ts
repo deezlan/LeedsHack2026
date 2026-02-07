@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { rankTopN, makeMatch, makeMatchId } from "@/lib/matching";
-import type { HelpRequest, User, Match } from "@/lib/types";
+import type { HelpRequest, User, Match, MatchState } from "@/lib/types";
+
+const PROGRESSED: MatchState[] = ["requested", "accepted", "declined"];
 
 export async function POST(req: Request) {
   try {
@@ -27,10 +29,10 @@ export async function POST(req: Request) {
       .toArray()) as User[];
 
     const ranked = rankTopN({ request, requester, candidates, n: topN });
-
     const nowIso = new Date().toISOString();
 
-    const matches: Match[] = ranked.map((r) => {
+    // Build suggested matches (fresh)
+    const suggested: Match[] = ranked.map((r) => {
       const id = makeMatchId(request.id, r.helper.id);
       return makeMatch({
         id,
@@ -44,21 +46,38 @@ export async function POST(req: Request) {
       });
     });
 
-    // Upsert by deterministic id so regenerating doesn't duplicate
+    // Guardrail: do NOT reset progressed matches back to suggested.
+    // If a match exists with state requested/accepted/declined, keep it as-is.
+    const finalMatches: Match[] = [];
+
     await Promise.all(
-      matches.map((m) =>
-        db.collection("matches").updateOne(
+      suggested.map(async (m) => {
+        const existing = (await db.collection("matches").findOne({ id: m.id })) as Match | null;
+
+        if (existing && PROGRESSED.includes(existing.state)) {
+          // keep existing match; do not overwrite state/payload
+          finalMatches.push(existing);
+          return;
+        }
+
+        await db.collection("matches").updateOne(
           { id: m.id },
           {
             $set: { ...m, updatedAt: nowIso },
             $setOnInsert: { createdAt: nowIso },
           },
           { upsert: true }
-        )
-      )
+        );
+
+        finalMatches.push(m);
+      })
     );
 
-    return NextResponse.json({ requestId: request.id, matches });
+    // Return matches in the ranked order (finalMatches may be out of order due to Promise.all)
+    const byId = new Map(finalMatches.map((x) => [x.id, x]));
+    const ordered = suggested.map((m) => byId.get(m.id)!).filter(Boolean);
+
+    return NextResponse.json({ requestId: request.id, matches: ordered });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "unknown error" }, { status: 500 });
   }
