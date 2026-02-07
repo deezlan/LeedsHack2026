@@ -48,6 +48,7 @@ export async function POST(req: Request) {
         : [];
 
     const result = await users.insertOne({
+    username: body.username,
     name: body.name,
     bio: body.bio ?? "",
     tags,
