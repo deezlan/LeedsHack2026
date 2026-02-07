@@ -114,6 +114,12 @@ export default function NewRequestPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tagMessage, setTagMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [requesterId, setRequesterId] = useState("u3");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("userId");
+    if (saved) setRequesterId(saved);
+  }, []);
 
   useEffect(() => {
     if (!tagMessage) return;
@@ -167,7 +173,7 @@ export default function NewRequestPage() {
     setIsSubmitting(true);
     try {
       const created = await createRequest({
-        requesterId: "user_local",
+        requesterId,
         title: buildTitle(draft.description),
         description: draft.description.trim(),
         urgency: draft.urgency,
@@ -189,6 +195,9 @@ export default function NewRequestPage() {
     <div className="space-y-8 animate-fadeUp">
       <div className="text-center sm:text-left space-y-2">
         <h1 className="text-3xl font-bold text-leeds-blue tracking-tight">New Request</h1>
+        
+        <p className="text-xs text-gray-500">Requester: {requesterId}</p>
+
         <p className="text-leeds-blue-dark/70">
           Find the right person to help you with your project or career.
         </p>
