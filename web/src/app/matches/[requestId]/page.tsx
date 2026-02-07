@@ -76,85 +76,97 @@ export default function MatchesPage() {
   const matchList = useMemo(() => matches, [matches]);
 
   return (
-    <section className="space-y-6">
+    <div className="space-y-8 animate-fadeUp">
       <div className="space-y-2">
-        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">
-          Matches
-        </p>
-        <h1 className="text-3xl font-semibold">Recommended helpers</h1>
-        <p className="max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-          Review matches for request{" "}
-          <span className="font-medium text-zinc-900 dark:text-zinc-100">
-            {requestId}
-          </span>{" "}
-          and send a request when you are ready.
+        <h1 className="text-3xl font-bold text-leeds-blue tracking-tight">Recommended Helpers</h1>
+        <p className="text-leeds-blue-dark/70">
+          We found these experts for your request <span className="font-semibold text-leeds-teal">#{requestId}</span>.
         </p>
       </div>
 
       {loading ? (
-        <div className="rounded-xl border border-dashed border-zinc-300/80 bg-white/60 p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-300">
-          Generating matches...
+        <div className="grid md:grid-cols-2 gap-6">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-48 rounded-2xl bg-white border border-leeds-border animate-pulse" />
+          ))}
         </div>
       ) : errorMessage ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
-          {errorMessage}
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-700">
+          <p className="font-semibold">Oops!</p>
+          <p className="text-sm mt-1">{errorMessage}</p>
         </div>
       ) : matchList.length === 0 ? (
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-          No matches yet. Try adjusting your request details.
+        <div className="text-center py-12 bg-white rounded-2xl border border-leeds-border">
+          <p className="text-leeds-blue-dark font-medium">No matches found yet.</p>
+          <p className="text-sm text-gray-500 mt-2">Try updating your request with more popular tags.</p>
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {matchList.map((match) => {
             const isRequested = requestedIds.has(match.id);
             const isRequesting = requestingIds.has(match.id);
-            const scoreLabel = `${Math.round(match.score * 100)}%`;
+            const scorePercent = Math.round(match.score * 100);
+
+            // Generate initials
+            const initials = match.helperName
+              .split(" ")
+              .map(n => n[0])
+              .join("")
+              .toUpperCase()
+              .slice(0, 2);
 
             return (
               <div
                 key={match.id}
-                className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+                className="group relative flex flex-col bg-white rounded-2xl border border-leeds-border shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.16em] text-zinc-400 dark:text-zinc-500">
-                      Helper
-                    </p>
-                    <p className="mt-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-                      {match.helperName}
-                    </p>
+                {/* Header */}
+                <div className="p-6 pb-4">
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div className="h-12 w-12 rounded-full bg-leeds-blue flex items-center justify-center text-white font-bold text-lg shadow-md group-hover:bg-leeds-teal transition-colors">
+                      {initials}
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${scorePercent > 80 ? 'bg-emerald-100 text-emerald-700' : 'bg-leeds-cream text-leeds-blue'
+                      }`}>
+                      {scorePercent}% Match
+                    </span>
                   </div>
-                  <span className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
-                    Match {scoreLabel}
-                  </span>
+
+                  <h3 className="text-lg font-bold text-leeds-blue-dark group-hover:text-leeds-blue transition-colors">
+                    {match.helperName}
+                  </h3>
+                  <p className="text-xs text-gray-500 font-medium">Frontend • React • UI/UX</p> {/* Hardcoded placeholder for now or derive from match reasons? */}
                 </div>
 
-                <div className="mt-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-zinc-400 dark:text-zinc-500">
-                    Reasons
-                  </p>
-                  <ul className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
-                    {match.reasons.map((reason) => (
-                      <li key={reason}>- {reason}</li>
+                {/* Body - Reasons */}
+                <div className="px-6 py-2 flex-1">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Why they matched</p>
+                  <ul className="space-y-2">
+                    {match.reasons.map((reason, i) => (
+                      <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
+                        <span className="text-leeds-teal mt-0.5">•</span>
+                        <span className="leading-snug">{reason}</span>
+                      </li>
                     ))}
                   </ul>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Request a session with this helper.
-                  </p>
+                {/* Footer - Action */}
+                <div className="p-6 pt-4 mt-auto">
                   <button
                     type="button"
                     onClick={() => handleRequestHelp(match.id)}
                     disabled={isRequested || isRequesting}
-                    className="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:disabled:bg-zinc-600"
+                    className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 ${isRequested
+                        ? "bg-gray-100 text-gray-500 cursor-default"
+                        : "bg-leeds-blue text-white shadow-md hover:bg-leeds-teal hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+                      }`}
                   >
                     {isRequested
-                      ? "Requested"
+                      ? "Request Sent"
                       : isRequesting
-                      ? "Requesting..."
-                      : "Request help"}
+                        ? "Sending..."
+                        : "Connect"}
                   </button>
                 </div>
               </div>
@@ -162,6 +174,6 @@ export default function MatchesPage() {
           })}
         </div>
       )}
-    </section>
+    </div>
   );
 }

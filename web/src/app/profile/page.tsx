@@ -32,8 +32,8 @@ export default function ProfilePage() {
         bio: parsed.bio ?? "",
         tags: Array.isArray(parsed.tags)
           ? (parsed.tags.filter((tag) =>
-              AllowedTags.includes(tag as AllowedTag)
-            ) as AllowedTag[])
+            AllowedTags.includes(tag as AllowedTag)
+          ) as AllowedTag[])
           : [],
       });
     } catch {
@@ -64,95 +64,107 @@ export default function ProfilePage() {
   const handleSave = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
-    setSaveMessage("Profile saved locally.");
+    setSaveMessage("Profile saved successfully.");
   };
 
   return (
-    <section className="space-y-6">
-      <div className="space-y-2">
-        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">
-          Profile
-        </p>
-        <h1 className="text-3xl font-semibold">Your Profile</h1>
-        <p className="max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-          Update your public details and tags. Changes are saved locally in your
-          browser until backend wiring is ready.
+    <section className="max-w-3xl mx-auto space-y-8">
+      <div className="space-y-4 text-center sm:text-left">
+        <h1 className="text-4xl font-bold text-leeds-blue tracking-tight">Your Profile</h1>
+        <p className="text-lg text-leeds-blue-dark/70 max-w-2xl">
+          Customize how you appear to other hackers. Show off your skills and what you're looking for.
         </p>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-6">
-        <div className="grid gap-4 sm:grid-cols-[1fr,2fr]">
-          <label className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-            Name
+      <div className="bg-white rounded-2xl shadow-lg border border-leeds-border overflow-hidden">
+        <div className="bg-leeds-blue/5 px-6 py-4 border-b border-leeds-border">
+          <h2 className="font-semibold text-leeds-blue">Public Information</h2>
+        </div>
+
+        <form onSubmit={handleSave} className="p-6 sm:p-8 space-y-8">
+          {/* Name Section */}
+          <div className="space-y-3">
+            <label className="block text-sm font-semibold text-leeds-blue-dark">
+              Display Name
+            </label>
             <input
               type="text"
               value={profile.name}
               onChange={(event) =>
                 setProfile((prev) => ({ ...prev, name: event.target.value }))
               }
-              placeholder="Add your name"
-              className="mt-2 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-600 dark:focus:ring-zinc-800"
+              placeholder="e.g. Alex Smith"
+              className="w-full rounded-xl border border-leeds-border bg-leeds-cream/30 px-4 py-3 text-leeds-blue-dark placeholder:text-gray-400 focus:border-leeds-teal focus:ring-2 focus:ring-leeds-teal/20 transition-all outline-none"
             />
-          </label>
+          </div>
 
-          <label className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-            Bio
+          {/* Bio Section */}
+          <div className="space-y-3">
+            <label className="block text-sm font-semibold text-leeds-blue-dark">
+              Bio
+            </label>
             <textarea
               value={profile.bio}
               onChange={(event) =>
                 setProfile((prev) => ({ ...prev, bio: event.target.value }))
               }
-              placeholder="Share what you can help with"
+              placeholder="Tell us about your skills, interests, and what you want to build..."
               rows={4}
-              className="mt-2 w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-600 dark:focus:ring-zinc-800"
+              className="w-full resize-none rounded-xl border border-leeds-border bg-leeds-cream/30 px-4 py-3 text-leeds-blue-dark placeholder:text-gray-400 focus:border-leeds-teal focus:ring-2 focus:ring-leeds-teal/20 transition-all outline-none"
             />
-          </label>
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              Tags
-            </p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              {profile.tags.length} selected
+            <p className="text-xs text-leeds-blue-dark/50 text-right">
+              {profile.bio.length} characters
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {AllowedTags.map((tag) => {
-              const selected = tagSet.has(tag);
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => toggleTag(tag)}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium capitalize transition ${
-                    selected
-                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                      : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600"
-                  }`}
-                >
-                  {tag}
-                </button>
-              );
-            })}
-          </div>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:focus:ring-zinc-700"
-          >
-            Save
-          </button>
-          {saveMessage && (
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-              {saveMessage}
-            </span>
-          )}
-        </div>
-      </form>
+          {/* Tags Section */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-semibold text-leeds-blue-dark">
+                Skills & Interests
+              </label>
+              <span className="text-xs font-medium text-leeds-teal bg-leeds-teal/10 px-2 py-1 rounded-full">
+                {profile.tags.length} selected
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {AllowedTags.map((tag) => {
+                const selected = tagSet.has(tag);
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTag(tag)}
+                    className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 border ${selected
+                        ? "border-leeds-teal bg-leeds-teal text-white shadow-md transform scale-105"
+                        : "border-leeds-border bg-white text-leeds-blue-dark/70 hover:border-leeds-teal/50 hover:bg-leeds-cream"
+                      }`}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="pt-6 border-t border-leeds-border flex items-center justify-end gap-4">
+            {saveMessage && (
+              <span className="animate-fadeUp text-sm font-medium text-leeds-teal flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                {saveMessage}
+              </span>
+            )}
+            <button
+              type="submit"
+              className="rounded-full bg-leeds-blue text-white px-8 py-3 text-sm font-bold shadow-lg shadow-leeds-blue/20 hover:bg-leeds-blue-dark hover:shadow-xl hover:-translate-y-0.5 transition-all focus:ring-2 focus:ring-offset-2 focus:ring-leeds-blue"
+            >
+              Save Profile
+            </button>
+          </div>
+        </form>
+      </div>
     </section>
   );
 }

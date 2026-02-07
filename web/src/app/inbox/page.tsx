@@ -21,12 +21,12 @@ type InboxItem = {
 
 const helperId = "h1";
 
-const statusLabel: Record<InboxStatus, string> = {
-  unread: "Unread",
-  read: "Read",
-  "action-needed": "Action needed",
-  accepted: "Accepted",
-  declined: "Declined",
+const statusConfig: Record<InboxStatus, { label: string; className: string }> = {
+  unread: { label: "Unread", className: "bg-leeds-teal/10 text-leeds-teal" },
+  read: { label: "Read", className: "bg-gray-100 text-gray-600" },
+  "action-needed": { label: "Action Needed", className: "bg-amber-100 text-amber-700 font-bold" },
+  accepted: { label: "Accepted", className: "bg-emerald-100 text-emerald-700" },
+  declined: { label: "Declined", className: "bg-rose-100 text-rose-700" },
 };
 
 export default function InboxPage() {
@@ -91,75 +91,131 @@ export default function InboxPage() {
   const itemList = useMemo(() => items, [items]);
 
   return (
-    <section className="space-y-6">
-      <div className="space-y-2">
-        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">
-          Inbox
-        </p>
-        <h1 className="text-3xl font-semibold">Messages</h1>
-        <p className="max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-          Review match requests and respond when you are ready.
-        </p>
+    <div className="max-w-4xl mx-auto space-y-8 animate-fadeUp">
+      <div className="space-y-4">
+        <h1 className="text-3xl font-bold text-leeds-blue tracking-tight">Inbox</h1>
+        <div className="flex items-center justify-between">
+          <p className="text-leeds-blue-dark/70">
+            Manage your connections and requests.
+          </p>
+          {!loading && (
+            <span className="text-sm font-medium text-leeds-teal bg-leeds-teal/10 px-3 py-1 rounded-full">
+              {itemList.length} Messages
+            </span>
+          )}
+        </div>
       </div>
 
       {loading ? (
-        <div className="rounded-xl border border-dashed border-zinc-300/80 bg-white/60 p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-300">
-          Loading inbox...
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-24 rounded-2xl bg-white border border-leeds-border animate-pulse" />
+          ))}
         </div>
       ) : errorMessage ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
-          {errorMessage}
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-700">
+          <p>{errorMessage}</p>
+        </div>
+      ) : itemList.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-leeds-border">
+          <div className="w-16 h-16 bg-leeds-cream rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+            📭
+          </div>
+          <h3 className="text-lg font-bold text-leeds-blue-dark">All caught up</h3>
+          <p className="text-gray-500 mt-2">No new messages or requests.</p>
         </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="space-y-4">
           {itemList.map((item) => {
             const isActing = actionIds.has(item.matchId);
             const isResolved =
               item.status === "accepted" || item.status === "declined";
+            const statusFn = statusConfig[item.status] || statusConfig.unread;
+
+            // Initials
+            const initials = item.fromUserName
+              .split(" ")
+              .map(n => n[0])
+              .join("")
+              .toUpperCase()
+              .slice(0, 2);
 
             return (
               <div
                 key={item.matchId}
-                className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+                className={`group relative flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border transition-all duration-200 ${item.status === 'unread' || item.status === 'action-needed'
+                    ? "border-leeds-teal/30 shadow-md shadow-leeds-teal/5"
+                    : "border-leeds-border shadow-sm hover:shadow-md"
+                  }`}
               >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-zinc-900 dark:text-zinc-50">
-                      {item.fromUserName}
-                    </p>
-                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      {item.preview}
-                    </p>
+                {/* Avatar */}
+                <div className="flex-shrink-0">
+                  <div className={`h-12 w-12 rounded-full flex items-center justify-center text-sm font-bold shadow-sm ${item.status === 'unread' || item.status === 'action-needed'
+                      ? "bg-leeds-teal text-leeds-blue-dark"
+                      : "bg-leeds-cream text-leeds-blue-dark/60"
+                    }`}>
+                    {initials}
                   </div>
-                  <span className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
-                    {statusLabel[item.status]}
-                  </span>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleDecision(item.matchId, "accepted")}
-                    disabled={isResolved || isActing}
-                    className="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:disabled:bg-zinc-600"
-                  >
-                    {isActing ? "Updating..." : "Accept"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDecision(item.matchId, "declined")}
-                    disabled={isResolved || isActing}
-                    className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-800 dark:text-zinc-200 dark:hover:border-zinc-600"
-                  >
-                    Decline
-                  </button>
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className={`text-base font-semibold truncate ${item.status === 'unread'
+                        ? "text-leeds-blue-dark"
+                        : "text-gray-700"
+                      }`}>
+                      {item.fromUserName}
+                    </h3>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${statusFn.className}`}>
+                      {statusFn.label}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-500 line-clamp-1">
+                    {item.preview}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Request ID: {item.requestId}
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0 justify-end">
+                  {/* If accepted, show open connection */}
                   {item.status === "accepted" && (
                     <Link
                       href={`/connections/${item.matchId}`}
-                      className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:border-emerald-300 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200"
+                      className="whitespace-nowrap rounded-full bg-leeds-blue text-white px-4 py-2 text-xs font-bold shadow-sm hover:bg-leeds-blue-dark transition-colors"
                     >
-                      Open connection
+                      Open Connection
                     </Link>
+                  )}
+
+                  {/* If declined, show nothing or minimal text */}
+                  {item.status === "declined" && (
+                    <span className="text-xs text-gray-400 font-medium">Declined</span>
+                  )}
+
+                  {/* If actionable */}
+                  {(!isResolved) && (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDecision(item.matchId, "declined")}
+                        disabled={isActing}
+                        className="px-4 py-2 rounded-full border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 transition-colors disabled:opacity-50"
+                      >
+                        Decline
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDecision(item.matchId, "accepted")}
+                        disabled={isActing}
+                        className="px-4 py-2 rounded-full bg-leeds-teal text-leeds-blue-dark text-xs font-bold shadow-sm hover:bg-leeds-teal-dark hover:text-white transition-all disabled:opacity-50"
+                      >
+                        {isActing ? "..." : "Accept"}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -167,6 +223,6 @@ export default function InboxPage() {
           })}
         </div>
       )}
-    </section>
+    </div>
   );
 }

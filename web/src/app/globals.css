@@ -1,28 +1,40 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-leeds-teal: #00D0A0;
+  --color-leeds-teal-dark: #00A881;
+  --color-leeds-blue: #003A52;
+  --color-leeds-blue-dark: #00323D;
+  --color-leeds-bright: #1A84C7;
+  --color-leeds-cream: #FFFBF5;
+  --color-leeds-surface: #FFFFFF;
+  --color-leeds-border: #E5E5E5;
+
+  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--color-leeds-cream);
+  --color-foreground: #212529;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Custom Utilities */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Smooth Focus Rings */
+:focus-visible {
+  outline: 2px solid var(--color-leeds-teal);
+  outline-offset: 2px;
 }
 
 @keyframes fadeUp {
@@ -30,6 +42,7 @@ body {
     opacity: 0;
     transform: translateY(14px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -37,11 +50,17 @@ body {
 }
 
 @keyframes floatSlow {
+
   0%,
   100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-10px);
   }
+}
+
+.animate-fadeUp {
+  animation: fadeUp 0.5s ease-out forwards;
 }
