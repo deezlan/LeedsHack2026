@@ -1,5 +1,6 @@
 ﻿import type { HelpRequest, Id, Match, User } from "./types";
 import { mockInbox, mockMatches, type InboxItem, type MatchCard } from "./mock";
+import type { ConnectionMessage } from "./types";
 
 const USE_MOCKS =
   process.env.NEXT_PUBLIC_USE_MOCKS === undefined ||
@@ -68,7 +69,9 @@ const toMatchCard = (match: Match): MatchCard => ({
   score: match.score,
   reasons: match.reasons,
   state: match.state,
+  connectionPayload: match.connectionPayload,
 });
+
 
 const toInboxItem = (match: Match): InboxItem => {
   const status: InboxItem["status"] =
@@ -283,4 +286,47 @@ export async function getMatch(matchId: Id): Promise<MatchCard> {
     ...toMatchCard(match),
     helperName: nameMap[match.helperId] ?? match.helperId,
   };
+}
+
+export async function getMessages(matchId: Id): Promise<ConnectionMessage[]> {
+  if (USE_MOCKS) return []; // or mock later
+
+  const { messages } = await apiFetch<{ messages: ConnectionMessage[] }>(
+    `/api/connections/${matchId}/messages`,
+    { method: "GET" }
+  );
+
+  return messages;
+}
+
+export async function sendMessage(input: {
+  matchId: Id;
+  senderId: Id;
+  senderRole: "requester" | "helper";
+  text: string;
+}): Promise<ConnectionMessage> {
+  if (USE_MOCKS) {
+    return {
+      id: makeId("msg"),
+      matchId: input.matchId,
+      senderId: input.senderId,
+      senderRole: input.senderRole,
+      text: input.text,
+      createdAt: nowIso(),
+    };
+  }
+
+  const { message } = await apiFetch<{ message: ConnectionMessage }>(
+    `/api/connections/${input.matchId}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        text: input.text,
+        senderId: input.senderId,
+        senderRole: input.senderRole,
+      }),
+    }
+  );
+
+  return message;
 }

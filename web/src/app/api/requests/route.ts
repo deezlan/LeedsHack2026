@@ -12,7 +12,7 @@ type CreateRequestBody = {
   tags?: HelpRequest["tags"];
 };
 
-const makeId = () => `r_${Math.random().toString(36).slice(2, 10)}`;
+const makeId = () => `req_${Math.random().toString(36).slice(2, 10)}`;
 
 export async function POST(req: Request) {
   try {

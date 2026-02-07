@@ -8,7 +8,6 @@ export type MatchCard = {
   reasons: string[];
   state?: "suggested" | "requested" | "accepted" | "declined";
   connectionPayload?: { message?: string; nextStep?: string };
-
 };
 
 export type InboxItem = {

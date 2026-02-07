@@ -1,23 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams } from "next/navigation";
-import { getMatch } from "../../../../lib/api";
+import { getMatch, getMessages, sendMessage } from "../../../../lib/api";
+import type { ConnectionMessage } from "../../../../lib/types";
 import type { MatchCard } from "../../../../lib/mock";
 
 export default function ConnectionPage() {
   const params = useParams<{ matchId: string }>();
   const matchIdParam = params?.matchId ?? "";
   const matchId = Array.isArray(matchIdParam) ? matchIdParam[0] : matchIdParam;
+  const CURRENT_USER_ID = "u2"; // your helperId for now
+  const CURRENT_ROLE: "helper" | "requester" = "helper";
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const [message, setMessage] = useState("");
   const [match, setMatch] = useState<MatchCard | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ConnectionMessage[]>([]);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!matchId) {
       setMatch(null);
+      setMessages([]);
       setLoading(false);
       return;
     }
@@ -27,9 +34,17 @@ export default function ConnectionPage() {
     setErrorMessage(null);
 
     getMatch(matchId)
-      .then((m) => {
+      .then(async (m) => {
         if (!isMounted) return;
         setMatch(m);
+
+        if (m.state === "accepted") {
+          const msgs = await getMessages(matchId);
+          if (!isMounted) return;
+          setMessages(msgs);
+        } else {
+          setMessages([]);
+        }
       })
       .catch((e) => {
         if (!isMounted) return;
@@ -44,6 +59,13 @@ export default function ConnectionPage() {
       isMounted = false;
     };
   }, [matchId]);
+
+  useEffect(() => {
+    // call whenever messages changes
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length]); // or [messages]
 
   const initials = useMemo(() => {
     if (!match?.helperName) return "?";
@@ -65,6 +87,33 @@ export default function ConnectionPage() {
         : match?.state === "declined"
           ? "bg-rose-100 text-rose-700"
           : "bg-gray-100 text-gray-600";
+
+  const onSend = async () => {
+    if (!match || match.state !== "accepted") return;
+
+    const text = message.trim();
+    if (!text) return;
+
+    setSending(true);
+    setErrorMessage(null);
+
+    try {
+      const created = await sendMessage({
+        matchId: match.id,
+        senderId: CURRENT_USER_ID,
+        senderRole: CURRENT_ROLE,
+        text,
+      });
+
+      // update UI immediately
+      setMessages((prev) => [...prev, created]);
+      setMessage("");
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Failed to send message.");
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <div className="h-[calc(100vh-140px)] min-h-[600px] flex flex-col lg:flex-row gap-6 animate-fadeUp">
@@ -94,7 +143,7 @@ export default function ConnectionPage() {
         </div>
 
         {/* Chat Messages Placeholder */}
-        <div className="flex-1 p-6 bg-leeds-cream/20 overflow-y-auto space-y-6">
+        <div ref={scrollRef} className="flex-1 p-6 bg-leeds-cream/20 overflow-y-auto space-y-6">
           {loading ? (
             <div className="h-full flex items-center justify-center text-sm text-gray-500">Loading connection…</div>
           ) : errorMessage ? (
@@ -114,22 +163,55 @@ export default function ConnectionPage() {
               </p>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-60">
-              <div className="w-16 h-16 bg-leeds-blue/5 rounded-full flex items-center justify-center text-2xl">
-                👋
-              </div>
-              <p className="text-sm text-gray-500 max-w-xs">
-                This is the start of your conversation with{" "}
-                <span className="font-semibold text-leeds-blue-dark">{match?.helperName}</span>.
-                Say hello and share your request details!
-              </p>
-            </div>
+            <>
+              {messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-60">
+                  <div className="w-16 h-16 bg-leeds-blue/5 rounded-full flex items-center justify-center text-2xl">
+                    👋
+                  </div>
+                  <p className="text-sm text-gray-500 max-w-xs">
+                    This is the start of your conversation with{" "}
+                    <span className="font-semibold text-leeds-blue-dark">{match?.helperName}</span>.
+                    Say hello and share your request details!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {messages.map((m) => {
+                    const isMine = m.senderId === CURRENT_USER_ID;
+
+                    return (
+                      <div key={m.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                        <div
+                          className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm ${
+                            isMine
+                              ? "bg-leeds-blue text-white"
+                              : "bg-white border border-leeds-border text-leeds-blue-dark"
+                          }`}
+                        >
+                          <div className="whitespace-pre-wrap break-words">{m.text}</div>
+                          <div className={`mt-1 text-[10px] opacity-70 ${isMine ? "text-white/70" : "text-gray-400"}`}>
+                            {new Date(m.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
 
         {/* Input Area */}
         <div className="p-4 bg-white border-t border-leeds-border">
-          <form className="flex gap-2" onSubmit={(e) => e.preventDefault()}>
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSend();
+            }}
+          >
             <input
               type="text"
               value={message}
@@ -140,10 +222,10 @@ export default function ConnectionPage() {
             />
             <button
               type="submit"
-              disabled={!message.trim() || match?.state !== "accepted"}
+              disabled={sending || !message.trim() || match?.state !== "accepted"}
               className="rounded-full bg-leeds-blue text-white px-5 py-2.5 text-sm font-bold shadow-sm hover:bg-leeds-blue-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Send
+              {sending ? "Sending..." : "Send"}
             </button>
           </form>
         </div>
@@ -181,21 +263,21 @@ export default function ConnectionPage() {
         <div className="bg-leeds-blue rounded-2xl border border-leeds-blue-dark p-5 shadow-sm text-white">
           <h3 className="text-sm font-bold mb-2">Next Steps</h3>
 
-          {match?.state === "accepted" && (match as any)?.connectionPayload ? (
+          {match?.state === "accepted" && match.connectionPayload ? (
             <ul className="space-y-3 text-xs text-white/80">
-              {(match as any).connectionPayload?.message && (
+              {match.connectionPayload.message && (
                 <li className="flex items-center gap-2">
                   <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">1</span>
                   {(match as any).connectionPayload.message}
                 </li>
               )}
-              {(match as any).connectionPayload?.nextStep && (
+              {match.connectionPayload.nextStep && (
                 <li className="flex items-center gap-2">
                   <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">2</span>
                   {(match as any).connectionPayload.nextStep}
                 </li>
               )}
-              {(!(match as any).connectionPayload?.message && !(match as any).connectionPayload?.nextStep) && (
+              {!match.connectionPayload.message && !match.connectionPayload.nextStep && (
                 <li className="text-xs text-white/80">Connection accepted — send a message to start.</li>
               )}
             </ul>
