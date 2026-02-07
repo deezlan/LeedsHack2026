@@ -1,16 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { mockMatches } from "../../../../lib/mock";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
+type ChatAttachment = {
+  name: string;
+  size: number;
+  type: string;
+};
+
 type ChatMessage = {
   id: string;
   text: string;
+  attachments?: ChatAttachment[];
   sender: "me" | "them";
   createdAt: string;
 };
+
+function isChatAttachment(value: unknown): value is ChatAttachment {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<ChatAttachment>;
+  return (
+    typeof candidate.name === "string" &&
+    typeof candidate.size === "number" &&
+    typeof candidate.type === "string"
+  );
+}
 
 function isChatMessage(value: unknown): value is ChatMessage {
   if (typeof value !== "object" || value === null) return false;
@@ -18,9 +35,18 @@ function isChatMessage(value: unknown): value is ChatMessage {
   return (
     typeof candidate.id === "string" &&
     typeof candidate.text === "string" &&
+    (candidate.attachments === undefined ||
+      (Array.isArray(candidate.attachments) &&
+        candidate.attachments.every(isChatAttachment))) &&
     (candidate.sender === "me" || candidate.sender === "them") &&
     typeof candidate.createdAt === "string"
   );
+}
+
+function formatAttachmentSize(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function ConnectionPage() {
@@ -30,10 +56,12 @@ export default function ConnectionPage() {
   const matchId = Array.isArray(matchIdParam) ? matchIdParam[0] : matchIdParam;
 
   const [message, setMessage] = useState("");
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const [loadedFromStorage, setLoadedFromStorage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const storageKey = useMemo(() => `chat:${matchId}`, [matchId]);
 
@@ -101,6 +129,7 @@ export default function ConnectionPage() {
           body: JSON.stringify({
             matchId,
             text: nextMessage.text,
+            attachments: nextMessage.attachments ?? [],
             createdAt: nextMessage.createdAt,
           }),
         });
@@ -118,22 +147,47 @@ export default function ConnectionPage() {
     (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       const trimmed = message.trim();
-      if (!trimmed) return;
+      if (!trimmed && attachments.length === 0) return;
 
       const nextMessage: ChatMessage = {
         id: `msg_${Date.now()}`,
         text: trimmed,
+        attachments: attachments.length > 0 ? attachments : undefined,
         sender: "me",
         createdAt: new Date().toISOString(),
       };
 
       setMessage("");
+      setAttachments([]);
       setSyncWarning(null);
       setMessages((prev) => [...prev, nextMessage]);
       void syncMessage(nextMessage);
     },
-    [message, syncMessage]
+    [attachments, message, syncMessage]
   );
+
+  const handleSelectAttachments = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const fileList = event.target.files;
+      if (!fileList || fileList.length === 0) return;
+
+      const nextAttachments: ChatAttachment[] = Array.from(fileList).map(
+        (file) => ({
+          name: file.name,
+          size: file.size,
+          type: file.type || "application/octet-stream",
+        })
+      );
+
+      setAttachments((prev) => [...prev, ...nextAttachments]);
+      event.target.value = "";
+    },
+    []
+  );
+
+  const handleRemoveAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+  }, []);
 
   if (!session) return null;
 
@@ -186,7 +240,25 @@ export default function ConnectionPage() {
                     : "bg-white border border-leeds-border text-leeds-blue-dark"
                     }`}
                 >
-                  <p>{item.text}</p>
+                  {item.text && <p>{item.text}</p>}
+                  {item.attachments && item.attachments.length > 0 && (
+                    <div className={`${item.text ? "mt-2" : ""} space-y-1`}>
+                      {item.attachments.map((attachment, index) => (
+                        <div
+                          key={`${attachment.name}-${attachment.size}-${index}`}
+                          className={`rounded-lg px-2 py-1 text-xs ${item.sender === "me"
+                            ? "bg-white/20 text-white"
+                            : "bg-leeds-cream text-leeds-blue-dark"
+                            }`}
+                        >
+                          <p className="truncate font-medium">{attachment.name}</p>
+                          <p className="opacity-80">
+                            {attachment.type} - {formatAttachmentSize(attachment.size)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -195,7 +267,53 @@ export default function ConnectionPage() {
 
         {/* Input Area */}
         <div className="p-4 bg-white border-t border-leeds-border">
+          {attachments.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {attachments.map((attachment, index) => (
+                <div
+                  key={`${attachment.name}-${attachment.size}-${index}`}
+                  className="inline-flex items-center gap-2 rounded-full bg-leeds-cream px-3 py-1.5 text-xs text-leeds-blue-dark border border-leeds-border"
+                >
+                  <span className="max-w-[180px] truncate">{attachment.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAttachment(index)}
+                    className="rounded-full w-4 h-4 inline-flex items-center justify-center bg-white text-gray-500 hover:text-red-600"
+                    aria-label={`Remove ${attachment.name}`}
+                  >
+                    x
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <form className="flex gap-2" onSubmit={handleSend}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleSelectAttachments}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-full border border-leeds-border px-3 py-2.5 text-sm text-leeds-blue hover:bg-leeds-cream transition-colors"
+              aria-label="Attach file"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21.44 11.05L12.25 20.24a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.65l-9.2 9.2a2 2 0 0 1-2.82-2.83l8.48-8.48" />
+              </svg>
+            </button>
             <input
               type="text"
               value={message}
@@ -205,7 +323,7 @@ export default function ConnectionPage() {
             />
             <button
               type="submit"
-              disabled={!message.trim()}
+              disabled={!message.trim() && attachments.length === 0}
               className="rounded-full bg-leeds-blue text-white px-5 py-2.5 text-sm font-bold shadow-sm hover:bg-leeds-blue-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send

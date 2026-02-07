@@ -5,6 +5,7 @@ import { AllowedTags, type AllowedTag } from "../../../lib/tags";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const STORAGE_KEY = "leedsHack.profile";
+const PROFILE_UPDATED_EVENT = "leedsHack.profile.updated";
 
 type ProfileDraft = {
   name: string;
@@ -68,6 +69,7 @@ export default function ProfilePage() {
   const handleSave = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    window.dispatchEvent(new CustomEvent(PROFILE_UPDATED_EVENT));
     setSaveMessage("Profile saved successfully.");
   };
 

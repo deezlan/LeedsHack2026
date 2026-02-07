@@ -1,7 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
+
+const PROFILE_STORAGE_KEY = "leedsHack.profile";
+const PROFILE_UPDATED_EVENT = "leedsHack.profile.updated";
+const GUEST_NAME = "Guest";
+const MORNING_GREETING = "Good Morning";
+const EVENING_GREETING = "Good Evening";
 
 const navLinks = [
   { href: "/profile", label: "Profile" },
@@ -11,8 +18,147 @@ const navLinks = [
   { href: "/connections/m1", label: "Connections" },
 ];
 
+type WeatherNowResponse = {
+  current?: {
+    is_day?: number;
+  };
+};
+
+function getTimeBasedGreeting(): string {
+  const hour = new Date().getHours();
+  return hour >= 18 || hour < 6 ? EVENING_GREETING : MORNING_GREETING;
+}
+
 export function Navbar() {
   const { session, isLoading, logout } = useAuth();
+  const [displayName, setDisplayName] = useState(GUEST_NAME);
+  const [greeting, setGreeting] = useState<string>(getTimeBasedGreeting);
+
+  useEffect(() => {
+    const getSessionName = () => {
+      const rawSessionName = session?.displayName ?? "";
+      const sessionName = rawSessionName.trim();
+      return sessionName || GUEST_NAME;
+    };
+
+    if (!session) {
+      setDisplayName(GUEST_NAME);
+      return;
+    }
+
+    const readDisplayName = () => {
+      try {
+        const raw = window.localStorage.getItem(PROFILE_STORAGE_KEY);
+        if (!raw) {
+          setDisplayName(getSessionName());
+          return;
+        }
+
+        const parsed = JSON.parse(raw) as { name?: unknown };
+        const nextName =
+          typeof parsed.name === "string" ? parsed.name.trim() : "";
+        setDisplayName(nextName || getSessionName());
+      } catch {
+        setDisplayName(getSessionName());
+      }
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === PROFILE_STORAGE_KEY) {
+        readDisplayName();
+      }
+    };
+
+    const handleProfileUpdated = () => {
+      readDisplayName();
+    };
+
+    readDisplayName();
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdated);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdated);
+    };
+  }, [session]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const setGreetingFromTime = () => {
+      setGreeting(getTimeBasedGreeting());
+    };
+
+    const setGreetingFromWeather = async (
+      latitude: number,
+      longitude: number,
+    ) => {
+      const params = new URLSearchParams({
+        latitude: latitude.toString(),
+        longitude: longitude.toString(),
+        current: "is_day",
+      });
+
+      try {
+        const response = await fetch(
+          `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch weather");
+        }
+
+        const payload = (await response.json()) as WeatherNowResponse;
+        if (cancelled) return;
+
+        if (payload.current?.is_day === 0) {
+          setGreeting(EVENING_GREETING);
+          return;
+        }
+
+        if (payload.current?.is_day === 1) {
+          setGreeting(MORNING_GREETING);
+          return;
+        }
+
+        setGreetingFromTime();
+      } catch {
+        if (!cancelled) {
+          setGreetingFromTime();
+        }
+      }
+    };
+
+    setGreetingFromTime();
+
+    if (!session) return;
+
+    if (!("geolocation" in navigator)) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        void setGreetingFromWeather(
+          position.coords.latitude,
+          position.coords.longitude,
+        );
+      },
+      () => {
+        if (!cancelled) {
+          setGreetingFromTime();
+        }
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 6500,
+        maximumAge: 15 * 60 * 1000,
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   return (
     <header className="sticky top-0 z-50 w-full bg-leeds-blue/90 backdrop-blur-md shadow-clay-card border-none supports-[backdrop-filter]:bg-leeds-blue/80">
@@ -43,7 +189,7 @@ export function Navbar() {
                   href="/profile"
                   className="text-sm font-medium text-white/80 hover:text-white transition-colors"
                 >
-                  {session.displayName}
+                  {greeting} {displayName}
                 </Link>
                 <button
                   onClick={logout}
@@ -53,12 +199,17 @@ export function Navbar() {
                 </button>
               </div>
             ) : (
-              <Link
-                href="/auth"
-                className="hidden md:inline-flex items-center justify-center rounded-full bg-leeds-teal px-4 py-2 text-sm font-semibold text-leeds-blue-dark shadow-sm transition-transform hover:bg-leeds-teal-dark hover:scale-105 active:scale-95"
-              >
-                Sign In
-              </Link>
+              <div className="hidden md:flex items-center gap-3">
+                <span className="text-sm font-medium text-white/80">
+                  Welcome, {GUEST_NAME}
+                </span>
+                <Link
+                  href="/auth"
+                  className="inline-flex items-center justify-center rounded-full bg-leeds-teal px-4 py-2 text-sm font-semibold text-leeds-blue-dark shadow-sm transition-transform hover:bg-leeds-teal-dark hover:scale-105 active:scale-95"
+                >
+                  Sign In
+                </Link>
+              </div>
             )
           )}
 
