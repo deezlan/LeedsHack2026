@@ -58,23 +58,26 @@ const quickPrompts = [
   },
 ];
 
-const keywordRules: Array<{ test: RegExp; tags: AllowedTag[] }> = [
-  { test: /\b(cv|resume)\b/i, tags: ["cv", "career"] },
-  { test: /\binterview\b|\bmock interview\b/i, tags: ["interview", "career"] },
-  { test: /\b(frontend|react|ui|ux|figma)\b/i, tags: ["frontend", "design"] },
-  { test: /\bbackend|api|server\b/i, tags: ["backend", "coding"] },
-  { test: /\bdatabase|sql|postgres\b/i, tags: ["database", "backend"] },
-  { test: /\bdesign|brand|visual\b/i, tags: ["design"] },
-  { test: /\bwriting|copy|docs\b/i, tags: ["writing"] },
-  { test: /\bmarketing|pitch|growth\b/i, tags: ["marketing"] },
-  { test: /\bfinance|budget|pricing\b/i, tags: ["finance"] },
-  { test: /\blegal|terms|privacy\b/i, tags: ["legal"] },
-  { test: /\bhealth|wellbeing\b/i, tags: ["health"] },
-  { test: /\badmin|ops|operations\b/i, tags: ["admin"] },
-  { test: /\bcode|bug|debug\b/i, tags: ["coding"] },
-];
+const MAX_SUGGESTED_TAGS = 5;
+const fallbackTags: AllowedTag[] = ["other", "coding"];
 
-const fallbackTags: AllowedTag[] = ["career", "coding", "design"];
+const tagKeywordMap: Record<AllowedTag, string[]> = {
+  career: ["career", "job", "role", "internship", "placement"],
+  cv: ["cv", "resume", "cover letter", "linkedin"],
+  interview: ["interview", "mock interview", "technical interview", "behavioural"],
+  coding: ["code", "coding", "bug", "debug", "algorithm", "leetcode"],
+  frontend: ["frontend", "front end", "react", "next.js", "ui", "ux", "css"],
+  backend: ["backend", "back end", "api", "server", "node", "express"],
+  database: ["database", "sql", "postgres", "mysql", "mongodb", "schema"],
+  design: ["design", "figma", "prototype", "wireframe", "visual", "brand"],
+  writing: ["writing", "copy", "docs", "documentation", "content", "essay"],
+  marketing: ["marketing", "pitch", "growth", "seo", "campaign", "social media"],
+  finance: ["finance", "budget", "pricing", "revenue", "cost", "funding"],
+  legal: ["legal", "terms", "privacy", "gdpr", "compliance", "contract"],
+  health: ["health", "wellbeing", "wellness", "stress", "burnout"],
+  admin: ["admin", "operations", "ops", "planning", "logistics", "timeline"],
+  other: ["other", "general", "misc"],
+};
 
 const buildTitle = (description: string) => {
   const normalized = description.trim().replace(/\s+/g, " ");
@@ -85,28 +88,41 @@ const buildTitle = (description: string) => {
 };
 
 const suggestTags = (description: string) => {
-  const selected = new Set<AllowedTag>();
-  keywordRules.forEach((rule) => {
-    if (rule.test.test(description)) {
-      rule.tags.forEach((tag) => selected.add(tag));
-    }
-  });
+  const normalized = description.toLowerCase();
+  const scoredTags = AllowedTags.map((tag, index) => {
+    const keywords = tagKeywordMap[tag] ?? [];
+    let score = 0;
 
-  fallbackTags.forEach((tag) => {
-    if (selected.size < 2) {
-      selected.add(tag);
-    }
-  });
-
-  if (selected.size < 2) {
-    AllowedTags.forEach((tag) => {
-      if (selected.size < 2) {
-        selected.add(tag);
+    keywords.forEach((keyword) => {
+      if (normalized.includes(keyword.toLowerCase())) {
+        score += keyword.includes(" ") ? 2 : 1;
       }
     });
+
+    return { tag, score, index };
+  })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.tag)
+    .slice(0, MAX_SUGGESTED_TAGS);
+
+  if (scoredTags.length === 0) {
+    return fallbackTags.filter((tag) => AllowedTags.includes(tag)).slice(0, MAX_SUGGESTED_TAGS);
   }
 
-  return Array.from(selected).slice(0, 3);
+  return scoredTags;
+};
+
+const clearDescription = (setDraftState: React.Dispatch<React.SetStateAction<RequestDraft>>) => {
+  setDraftState((prev) => {
+    if (!prev.description) {
+      return prev;
+    }
+    return { ...prev, description: "" };
+  });
 };
 
 export default function NewRequestPage() {
@@ -157,6 +173,10 @@ export default function NewRequestPage() {
       const nextDescription = trimmed ? `${trimmed}\n${value}` : value;
       return { ...prev, description: nextDescription };
     });
+  };
+
+  const handleClearDescription = () => {
+    clearDescription(setDraft);
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -226,9 +246,19 @@ export default function NewRequestPage() {
                     <label htmlFor="description" className="block text-lg font-bold text-leeds-blue-dark">
                       Describe your challenge
                     </label>
-                    <span className={`text-xs font-mono transition-colors ${draft.description.length > 0 ? "text-leeds-teal" : "text-gray-400"}`}>
-                      {draft.description.length} chars
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-mono transition-colors ${draft.description.length > 0 ? "text-leeds-teal" : "text-gray-400"}`}>
+                        {draft.description.length} chars
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearDescription}
+                        disabled={!draft.description}
+                        className="text-xs font-semibold text-gray-500 hover:text-leeds-teal disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
 
                   <div className="relative group/input">
