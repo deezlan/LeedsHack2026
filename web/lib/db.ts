@@ -1,14 +1,13 @@
 import { MongoClient, Db } from "mongodb";
 
 const uri = process.env.MONGODB_URI;
-if (!uri) throw new Error("Missing MONGODB_URI in .env.local");
+if (!uri) throw new Error("Missing MONGODB_URI in .env");
 
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
 // global variables
 declare global {
-  // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
