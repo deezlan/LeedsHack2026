@@ -10,8 +10,12 @@
     "seed": "tsx seed/seed.ts"
   },
   "dependencies": {
+<<<<<<< HEAD
     "dotenv": "^17.2.4",
     "mongodb": "^7.1.0",
+=======
+    "@google/generative-ai": "^0.24.1",
+>>>>>>> origin/gemini
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"
