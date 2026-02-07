@@ -45,14 +45,14 @@ export default function Home() {
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-white/60 to-transparent opacity-50 pointer-events-none" />
 
         <div className="relative z-10 space-y-6 max-w-3xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/50 backdrop-blur-sm rounded-full border border-leeds-border/50 text-sm font-medium text-leeds-blue-dark/80 mx-auto mb-4">
-            <span className="w-2 h-2 rounded-full bg-leeds-teal animate-pulse" />
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/50 backdrop-blur-sm rounded-full border border-leeds-border/50 text-sm font-medium text-leeds-blue-dark/80 mx-auto mb-4 hover:shadow-[0_0_15px_rgba(var(--leeds-teal),0.2)] transition-shadow duration-300">
+            <span className="w-2 h-2 rounded-full bg-leeds-teal animate-pulse-glow" />
             Welcome to CampusConnect
           </div>
 
-          <h1 className="text-5xl sm:text-7xl font-bold text-leeds-blue tracking-tight leading-[1.1]">
-            Connect, Collaborate, <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-leeds-teal to-leeds-bright">
+          <h1 className="text-5xl sm:text-7xl font-bold text-leeds-blue tracking-tight leading-[1.1] animate-float">
+            <span className="text-glow-sm">Connect, Collaborate,</span> <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-leeds-teal via-leeds-teal-light to-leeds-teal bg-[length:200%_auto] animate-shimmer text-glow">
               Create Together.
             </span>
           </h1>
@@ -64,7 +64,7 @@ export default function Home() {
           <div className="pt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
               href="/request/new"
-              className="px-8 py-4 bg-leeds-blue text-white rounded-full font-bold text-lg hover:bg-leeds-blue-dark transition-all hover:scale-105 active:scale-95 shadow-lg shadow-leeds-blue/20"
+              className="px-8 py-4 bg-leeds-blue text-white rounded-full font-bold text-lg hover:bg-leeds-blue-dark transition-all hover:scale-105 active:scale-95 shadow-lg shadow-leeds-blue/20 hover:shadow-[0_0_20px_rgba(var(--leeds-teal),0.4)]"
             >
               Ask For Help
             </Link>
@@ -90,11 +90,11 @@ export default function Home() {
             <div className={`absolute inset-0 bg-gradient-to-br from-transparent to-leeds-cream/30 opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
 
             <div className="relative z-10">
-              <div className={`h-14 w-14 rounded-2xl ${link.color} flex items-center justify-center text-3xl shadow-sm mb-6 group-hover:scale-110 transition-transform duration-300`}>
+              <div className={`h-14 w-14 rounded-2xl ${link.color} flex items-center justify-center text-3xl shadow-sm mb-6 group-hover:scale-110 transition-transform duration-300 group-hover:shadow-[0_0_15px_rgba(var(--leeds-teal),0.3)]`}>
                 <span className="text-white drop-shadow-sm">{link.iconEmoji || "✨"}</span>
               </div>
 
-              <h2 className="text-2xl font-bold text-leeds-blue-dark group-hover:text-leeds-teal transition-colors">
+              <h2 className="text-2xl font-bold text-leeds-blue-dark group-hover:text-leeds-teal transition-colors group-hover:text-glow-sm">
                 {link.label}
               </h2>
               <p className="text-base text-gray-500 mt-3 leading-relaxed">
