@@ -19,7 +19,7 @@ type InboxItem = {
   status: InboxStatus;
 };
 
-const helperId = "h1";
+const helperId = "u2";
 
 const statusConfig: Record<InboxStatus, { label: string; className: string }> = {
   unread: { label: "Unread", className: "bg-leeds-teal/10 text-leeds-teal" },
@@ -61,24 +61,18 @@ export default function InboxPage() {
     };
   }, []);
 
-  const handleDecision = async (
-    matchId: string,
-    decision: "accepted" | "declined"
-  ) => {
+  const handleDecision = async (matchId: string, decision: "accepted" | "declined") => {
     setActionIds((prev) => new Set(prev).add(matchId));
     setErrorMessage(null);
 
     try {
       await respondToMatch(matchId, decision);
-      setItems((prev) =>
-        prev.map((item) =>
-          item.matchId === matchId ? { ...item, status: decision } : item
-        )
-      );
+
+      // Re-fetch inbox so it reflects backend state
+      const refreshed = await getInbox(helperId);
+      setItems(refreshed as InboxItem[]);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Could not update match."
-      );
+      setErrorMessage(error instanceof Error ? error.message : "Could not update match.");
     } finally {
       setActionIds((prev) => {
         const next = new Set(prev);
@@ -87,6 +81,7 @@ export default function InboxPage() {
       });
     }
   };
+
 
   const itemList = useMemo(() => items, [items]);
 
@@ -128,8 +123,6 @@ export default function InboxPage() {
         <div className="space-y-4">
           {itemList.map((item) => {
             const isActing = actionIds.has(item.matchId);
-            const isResolved =
-              item.status === "accepted" || item.status === "declined";
             const statusFn = statusConfig[item.status] || statusConfig.unread;
 
             // Initials
@@ -197,7 +190,7 @@ export default function InboxPage() {
                   )}
 
                   {/* If actionable */}
-                  {(!isResolved) && (
+                  {item.status === "action-needed" && (
                     <div className="flex gap-2">
                       <button
                         type="button"

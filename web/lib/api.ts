@@ -67,19 +67,30 @@ const toMatchCard = (match: Match): MatchCard => ({
   helperName: match.helperId,
   score: match.score,
   reasons: match.reasons,
+  state: match.state,
 });
 
-const toInboxItem = (match: Match): InboxItem => ({
-  matchId: match.id,
-  requestId: match.requestId,
-  // TODO: replace IDs with display names when user lookup is available.
-  fromUserName: match.requesterId,
-  preview:
-    match.connectionPayload?.message ??
-    match.connectionPayload?.nextStep ??
-    "New match request.",
-  status: match.state === "requested" ? "action-needed" : "read",
-});
+const toInboxItem = (match: Match): InboxItem => {
+  const status: InboxItem["status"] =
+    match.state === "requested"
+      ? "action-needed"
+      : match.state === "accepted"
+        ? "accepted"
+        : match.state === "declined"
+          ? "declined"
+          : "read";
+
+  return {
+    matchId: match.id,
+    requestId: match.requestId,
+    fromUserName: match.requesterId, // later replace with name lookup
+    preview:
+      match.connectionPayload?.message ??
+      match.connectionPayload?.nextStep ??
+      "New match request.",
+    status,
+  };
+};
 
 export async function createUser(profile: CreateUserInput): Promise<User> {
   if (USE_MOCKS) {
@@ -167,7 +178,17 @@ export async function generateMatches(
     }
   );
 
-  return matches.map(toMatchCard);
+  const res = await fetch("/api/debug/store", { cache: "no-store" });
+  let nameMap: Record<string, string> = {};
+  if (res.ok) {
+    const data = await res.json();
+    for (const u of data.users ?? []) nameMap[u.id] = u.name;
+  }
+
+  return matches.map((m) => ({
+    ...toMatchCard(m),
+    helperName: nameMap[m.helperId] ?? m.helperId,
+  }));
 }
 
 export async function requestHelp(matchId: Id): Promise<MatchCard> {
@@ -226,5 +247,23 @@ export async function getInbox(helperId: Id): Promise<InboxItem[]> {
     { method: "GET" }
   );
 
-  return items.map(toInboxItem);
+  const nameMap = await getUserNameMap();
+
+  return items.map((m) => {
+    const item = toInboxItem(m);
+    return {
+      ...item,
+      fromUserName: nameMap[m.requesterId] ?? item.fromUserName,
+    };
+  });
+}
+
+
+async function getUserNameMap(): Promise<Record<string, string>> {
+  const res = await fetch("/api/debug/store", { cache: "no-store" });
+  if (!res.ok) return {};
+  const data = await res.json();
+  const map: Record<string, string> = {};
+  for (const u of data.users ?? []) map[u.id] = u.name;
+  return map;
 }
