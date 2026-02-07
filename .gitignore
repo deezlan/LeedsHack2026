@@ -1,0 +1,24 @@
+# deps / builds
+node_modules
+.next
+dist
+out
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor
+.DS_Store
+.vscode
+.idea
+
+# docker volumes (if you ever bind them)
+mongo-data
