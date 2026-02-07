@@ -6,6 +6,7 @@ import { getDb } from "./db";
 // database  model 
 export interface UserDB {
   _id?: ObjectId;
+  username: string;
   name: string;
   bio?: string;
   tags: AllowedTag[];
@@ -53,6 +54,7 @@ export async function initialiseDatabase(){
   console.log("Creating database indexes...");
 
   // Users collection indexes
+  await db.collection("users").createIndex({ username: 1 }, { unique: true });
   await db.collection("users").createIndex({ tags: 1 });
   await db.collection("users").createIndex({ name: 1 });
 
