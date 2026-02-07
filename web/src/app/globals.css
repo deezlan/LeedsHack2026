@@ -3,18 +3,18 @@
 @tailwind utilities;
 
 :root {
-  --color-leeds-teal: #00D0A0;
-  --color-leeds-teal-dark: #00A881;
-  --color-leeds-blue: #003A52;
-  --color-leeds-blue-dark: #00323D;
-  --color-leeds-bright: #1A84C7;
-  --color-leeds-cream: #FFFBF5;
-  --color-leeds-surface: #FFFFFF;
-  --color-leeds-border: #E5E5E5;
+  --leeds-teal: 0 208 160;
+  --leeds-teal-dark: 0 168 129;
+  --leeds-blue: 0 58 82;
+  --leeds-blue-dark: 0 50 61;
+  --leeds-bright: 26 132 199;
+  --leeds-cream: 255 251 245;
+  --leeds-surface: 255 255 255;
+  --leeds-border: 229 229 229;
 
   --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 
-  --color-background: var(--color-leeds-cream);
+  --color-background: rgb(var(--leeds-cream));
   --color-foreground: #212529;
 }
 
@@ -24,8 +24,6 @@
     /* text-wrap: balance; */
   }
 }
-
-
 
 body {
   background-color: var(--color-background);
