@@ -1,14 +1,5 @@
 [
-  {
-    "name": "Aisha",
-    "tags": ["frontend", "design"]
-  },
-  {
-    "name": "Ben",
-    "tags": ["backend", "database"]
-  },
-  {
-    "name": "Chen",
-    "tags": ["interview", "cv", "writing"]
-  }
+  { "id": "u1", "name": "Aisha", "tags": ["frontend", "design"] },
+  { "id": "u2", "name": "Ben", "tags": ["backend", "database"] },
+  { "id": "u3", "name": "Chen", "tags": ["interview", "cv", "writing"] }
 ]

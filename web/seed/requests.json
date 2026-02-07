@@ -6,8 +6,6 @@
     "description": "Need a 30-min mock interview for SWE placement; focus on testing + debugging stories.",
     "urgency": "high",
     "format": "call",
-    "tags": ["interview", "coding"],
-    "createdAt": "2026-02-07T00:00:00.000Z",
-    "updatedAt": "2026-02-07T00:00:00.000Z"
+    "tags": ["interview", "coding"]
   }
 ]
