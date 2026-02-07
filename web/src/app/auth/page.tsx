@@ -20,7 +20,7 @@ export default function AuthPage() {
   // If already authed, redirect away
   useEffect(() => {
     if (!isLoading && session) {
-      router.replace("/request/new");
+      router.replace("/");
     }
   }, [isLoading, session, router]);
 

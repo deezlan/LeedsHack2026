@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await apiSignup(email, password, displayName);
       setSession(result.session);
       setSessionState(result.session);
-      router.push("/profile");
+      router.push("/");
     },
     [router],
   );
@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await apiLogin(email, password);
       setSession(result.session);
       setSessionState(result.session);
-      router.push("/request/new");
+      router.push("/");
     },
     [router],
   );

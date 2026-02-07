@@ -1,9 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { mockMatches } from "../../../../lib/mock";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+
+type ChatMessage = {
+  id: string;
+  text: string;
+  sender: "me" | "them";
+  createdAt: string;
+};
+
+function isChatMessage(value: unknown): value is ChatMessage {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<ChatMessage>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.text === "string" &&
+    (candidate.sender === "me" || candidate.sender === "them") &&
+    typeof candidate.createdAt === "string"
+  );
+}
 
 export default function ConnectionPage() {
   const session = useRequireAuth();
@@ -12,6 +30,12 @@ export default function ConnectionPage() {
   const matchId = Array.isArray(matchIdParam) ? matchIdParam[0] : matchIdParam;
 
   const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
+  const [loadedFromStorage, setLoadedFromStorage] = useState(false);
+
+  const storageKey = useMemo(() => `chat:${matchId}`, [matchId]);
 
   const match = useMemo(
     () => mockMatches.find((item) => item.id === matchId),
@@ -24,6 +48,92 @@ export default function ConnectionPage() {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    setLoadedFromStorage(false);
+    setStorageWarning(null);
+
+    if (!matchId) {
+      setMessages([]);
+      setLoadedFromStorage(true);
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) {
+        setMessages([]);
+      } else {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          setMessages([]);
+        } else {
+          setMessages(parsed.filter(isChatMessage));
+        }
+      }
+    } catch {
+      setMessages([]);
+      setStorageWarning("Could not load older messages.");
+    } finally {
+      setLoadedFromStorage(true);
+    }
+  }, [matchId, storageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !loadedFromStorage) return;
+
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(messages));
+      setStorageWarning(null);
+    } catch {
+      setStorageWarning("Message saved in chat, but not persisted locally.");
+    }
+  }, [loadedFromStorage, messages, storageKey]);
+
+  const syncMessage = useCallback(
+    async (nextMessage: ChatMessage) => {
+      try {
+        const response = await fetch("/api/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            matchId,
+            text: nextMessage.text,
+            createdAt: nextMessage.createdAt,
+          }),
+        });
+
+        if (response.status === 404) return;
+        if (!response.ok) throw new Error("Message sync failed");
+      } catch {
+        setSyncWarning("Message sent, but server sync failed.");
+      }
+    },
+    [matchId]
+  );
+
+  const handleSend = useCallback(
+    (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const trimmed = message.trim();
+      if (!trimmed) return;
+
+      const nextMessage: ChatMessage = {
+        id: `msg_${Date.now()}`,
+        text: trimmed,
+        sender: "me",
+        createdAt: new Date().toISOString(),
+      };
+
+      setMessage("");
+      setSyncWarning(null);
+      setMessages((prev) => [...prev, nextMessage]);
+      void syncMessage(nextMessage);
+    },
+    [message, syncMessage]
+  );
 
   if (!session) return null;
 
@@ -52,22 +162,40 @@ export default function ConnectionPage() {
           </button>
         </div>
 
-        {/* Chat Messages Placeholder */}
+        {/* Chat Messages */}
         <div className="flex-1 p-6 bg-leeds-cream/20 overflow-y-auto space-y-6">
-          <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-60">
-            <div className="w-16 h-16 bg-leeds-blue/5 rounded-full flex items-center justify-center text-2xl">
-              👋
+          {messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-60">
+              <div className="w-16 h-16 bg-leeds-blue/5 rounded-full flex items-center justify-center text-2xl">
+                👋
+              </div>
+              <p className="text-sm text-gray-500 max-w-xs">
+                This is the start of your conversation with <span className="font-semibold text-leeds-blue-dark">{match?.helperName}</span>.
+                Say hello and share your request details!
+              </p>
             </div>
-            <p className="text-sm text-gray-500 max-w-xs">
-              This is the start of your conversation with <span className="font-semibold text-leeds-blue-dark">{match?.helperName}</span>.
-              Say hello and share your request details!
-            </p>
-          </div>
+          ) : (
+            messages.map((item) => (
+              <div
+                key={item.id}
+                className={`flex ${item.sender === "me" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${item.sender === "me"
+                    ? "bg-leeds-blue text-white"
+                    : "bg-white border border-leeds-border text-leeds-blue-dark"
+                    }`}
+                >
+                  <p>{item.text}</p>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
         {/* Input Area */}
         <div className="p-4 bg-white border-t border-leeds-border">
-          <form className="flex gap-2" onSubmit={(e) => e.preventDefault()}>
+          <form className="flex gap-2" onSubmit={handleSend}>
             <input
               type="text"
               value={message}
@@ -83,6 +211,9 @@ export default function ConnectionPage() {
               Send
             </button>
           </form>
+          {(storageWarning || syncWarning) && (
+            <p className="mt-2 text-xs text-amber-700">{storageWarning ?? syncWarning}</p>
+          )}
         </div>
       </div>
 
