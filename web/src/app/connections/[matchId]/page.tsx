@@ -6,7 +6,8 @@ import { mockMatches } from "../../../../lib/mock";
 
 export default function ConnectionPage() {
   const params = useParams<{ matchId: string }>();
-  const matchId = params?.matchId ?? "";
+  const matchIdParam = params?.matchId ?? "";
+  const matchId = Array.isArray(matchIdParam) ? matchIdParam[0] : matchIdParam;
 
   const match = useMemo(
     () => mockMatches.find((item) => item.id === matchId),

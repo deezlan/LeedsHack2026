@@ -54,6 +54,13 @@ export type CreateRequestInput = Omit<
 
 export type MatchDecision = "accepted" | "declined";
 
+type CreateUserPayload = Omit<User, "createdAt" | "updatedAt">;
+type CreateRequestPayload = Omit<HelpRequest, "id" | "createdAt" | "updatedAt">;
+type RespondMatchPayload = {
+  decision: MatchDecision;
+  connectionPayload?: Match["connectionPayload"];
+};
+
 const toMatchCard = (match: Match): MatchCard => ({
   id: match.id,
   requestId: match.requestId,
@@ -85,9 +92,21 @@ export async function createUser(profile: CreateUserInput): Promise<User> {
     } as User;
   }
 
+  if (!profile.id) {
+    throw new Error("createUser requires an id when USE_MOCKS is false.");
+  }
+
+  const payload: CreateUserPayload = {
+    id: profile.id,
+    name: profile.name,
+    bio: profile.bio,
+    tags: profile.tags,
+    timezone: profile.timezone,
+  };
+
   const { user } = await apiFetch<{ user: User }>("/api/users", {
     method: "POST",
-    body: JSON.stringify(profile),
+    body: JSON.stringify(payload),
   });
 
   return user;
@@ -106,18 +125,30 @@ export async function createRequest(
     } as HelpRequest;
   }
 
+  const payload: CreateRequestPayload = {
+    requesterId: request.requesterId,
+    title: request.title,
+    description: request.description,
+    urgency: request.urgency,
+    format: request.format,
+    tags: request.tags,
+  };
+
   const { request: created } = await apiFetch<{ request: HelpRequest }>(
     "/api/requests",
     {
       method: "POST",
-      body: JSON.stringify(request),
+      body: JSON.stringify(payload),
     }
   );
 
   return created;
 }
 
-export async function generateMatches(requestId: Id): Promise<MatchCard[]> {
+export async function generateMatches(
+  requestId: Id,
+  topN?: number
+): Promise<MatchCard[]> {
   if (USE_MOCKS) {
     const filtered = mockMatches.filter(
       (match) => match.requestId === requestId
@@ -125,11 +156,14 @@ export async function generateMatches(requestId: Id): Promise<MatchCard[]> {
     return filtered.length ? filtered : mockMatches;
   }
 
+  const payload =
+    topN === undefined ? { requestId } : { requestId, topN };
+
   const { matches } = await apiFetch<{ matches: Match[] }>(
     "/api/matches/generate",
     {
       method: "POST",
-      body: JSON.stringify({ requestId }),
+      body: JSON.stringify(payload),
     }
   );
 
@@ -155,7 +189,8 @@ export async function requestHelp(matchId: Id): Promise<MatchCard> {
 
 export async function respondToMatch(
   matchId: Id,
-  decision: MatchDecision
+  decision: MatchDecision,
+  connectionPayload?: Match["connectionPayload"]
 ): Promise<MatchCard> {
   if (USE_MOCKS) {
     const match = mockMatches.find((item) => item.id === matchId);
@@ -165,11 +200,16 @@ export async function respondToMatch(
     return match;
   }
 
+  const payload: RespondMatchPayload =
+    connectionPayload === undefined
+      ? { decision }
+      : { decision, connectionPayload };
+
   const { match } = await apiFetch<{ match: Match }>(
     `/api/matches/${matchId}/respond`,
     {
       method: "POST",
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify(payload),
     }
   );
 
