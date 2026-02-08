@@ -61,7 +61,18 @@ export default function MatchesPage() {
 
     try {
       const updated = await requestHelp(matchId); // should return MatchCard with state
-      setMatches((prev) => prev.map((m) => (m.id === matchId ? updated : m)));
+      
+      setMatches((prev) =>
+        prev.map((m) =>
+          m.id === matchId
+            ? {
+                ...m,           // keep current helperName etc
+                ...updated,     // overwrite state/score/reasons/etc
+                helperName: m.helperName, // force keep display name
+              }
+            : m
+        )
+      );
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not request help."

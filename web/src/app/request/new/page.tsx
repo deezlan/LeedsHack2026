@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRequest } from "../../../../lib/api";
 import { AllowedTags, type AllowedTag } from "../../../../lib/tags";
+import { suggestTagsSmart } from "../../../../lib/suggestTags";
 
 type RequestFormat = "chat" | "call" | "async";
 type RequestUrgency = "low" | "medium" | "high";
@@ -83,6 +84,9 @@ const buildTitle = (description: string) => {
   return words.length > 6 ? `${snippet}...` : snippet;
 };
 
+const isObjectId = (v: unknown) =>
+  typeof v === "string" && /^[a-f\d]{24}$/i.test(v);
+
 const suggestTags = (description: string) => {
   const selected = new Set<AllowedTag>();
   keywordRules.forEach((rule) => {
@@ -113,12 +117,71 @@ export default function NewRequestPage() {
   const [draft, setDraft] = useState<RequestDraft>(emptyDraft);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tagMessage, setTagMessage] = useState<string | null>(null);
+  const [isSuggestingTags, setIsSuggestingTags] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [requesterId, setRequesterId] = useState("u3");
+
+  type ApiUser = {
+    id: string;
+    name: string;
+  };
+
+  const [requesterId, setRequesterId] = useState<string>("");
+  const [users, setUsers] = useState<ApiUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
 
   useEffect(() => {
-    const saved = localStorage.getItem("userId");
-    if (saved) setRequesterId(saved);
+    let mounted = true;
+
+    async function loadRequester() {
+      setUsersLoading(true);
+
+      try {
+        const res = await fetch("/api/users", { cache: "no-store" });
+        const json = await res.json();
+
+        const list: ApiUser[] = Array.isArray(json?.data)
+          ? json.data
+          : Array.isArray(json?.users)
+            ? json.users
+            : [];
+
+        if (!mounted) return;
+
+        setUsers(list);
+
+        // Build a set of valid ids from the API response
+        const validIds = new Set(
+          list.map((u) => u.id).filter((id) => isObjectId(id))
+        );
+
+        const saved = localStorage.getItem("userId");
+        const savedIsValid = saved && isObjectId(saved) && validIds.has(saved);
+
+        // Prefer saved if it still exists in DB, otherwise fall back
+        const chosen =
+          savedIsValid
+            ? (saved as string)
+            : (list.find((u) => isObjectId(u.id))?.id ?? "");
+
+        setRequesterId(chosen);
+
+        if (chosen) localStorage.setItem("userId", chosen);
+        else localStorage.removeItem("userId");
+      } catch {
+        if (!mounted) return;
+        setUsers([]);
+        setRequesterId("");
+        localStorage.removeItem("userId");
+      } finally {
+        if (!mounted) return;
+        setUsersLoading(false);
+      }
+    }
+
+    loadRequester();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -147,10 +210,20 @@ export default function NewRequestPage() {
     });
   };
 
-  const handleSuggestTags = () => {
-    const suggestions = suggestTags(draft.description);
-    setDraft((prev) => ({ ...prev, tags: suggestions }));
-    setTagMessage("Suggested tags applied.");
+  const handleSuggestTags = async () => {
+    if (!draft.description.trim()) {
+      setTagMessage("Write a description first so we can suggest tags.");
+      return;
+    }
+
+    setIsSuggestingTags(true);
+    try {
+      const { tags, source } = await suggestTagsSmart(draft.description, 3);
+      setDraft((prev) => ({ ...prev, tags }));
+      setTagMessage(source === "ai" ? "AI suggestions applied." : "Suggestions applied (fallback).");
+    } finally {
+      setIsSuggestingTags(false);
+    }
   };
 
   const handleQuickPrompt = (value: string) => {
@@ -164,6 +237,11 @@ export default function NewRequestPage() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorMessage(null);
+
+    if (!isObjectId(requesterId)) {
+      setErrorMessage("No valid requester selected (Mongo user id missing).");
+      return;
+    }
 
     if (!draft.description.trim()) {
       setErrorMessage("Add a short description to continue.");
@@ -186,10 +264,16 @@ export default function NewRequestPage() {
       setErrorMessage(
         error instanceof Error ? error.message : "Something went wrong."
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const canSubmit = draft.description.trim().length > 0 && !isSubmitting;
+  const canSubmit =
+  draft.description.trim().length > 0 &&
+  !isSubmitting &&
+  isObjectId(requesterId) &&
+  !usersLoading;
 
   return (
     <div className="space-y-8 animate-fadeUp">
@@ -197,6 +281,9 @@ export default function NewRequestPage() {
         <h1 className="text-3xl font-bold text-leeds-blue tracking-tight">New Request</h1>
         
         <p className="text-xs text-gray-500">Requester: {requesterId}</p>
+        <p className="text-xs text-gray-500">
+          usersLoading: {String(usersLoading)} | requesterId: {requesterId || "(empty)"} | isObjectId: {String(isObjectId(requesterId))} | descLen: {draft.description.trim().length}
+        </p>
 
         <p className="text-leeds-blue-dark/70">
           Find the right person to help you with your project or career.
@@ -282,9 +369,10 @@ export default function NewRequestPage() {
                   <button
                     type="button"
                     onClick={handleSuggestTags}
-                    className="text-xs text-leeds-teal font-medium hover:underline"
+                    disabled={isSuggestingTags}
+                    className="text-xs text-leeds-teal font-medium hover:underline disabled:opacity-50"
                   >
-                    Suggest tags based on description
+                    {isSuggestingTags ? "Suggesting..." : "Suggest tags based on description"}
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
