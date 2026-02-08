@@ -42,6 +42,7 @@ export type CreateUserInput = Omit<User, "id" | "createdAt" | "updatedAt"> & {
   id?: Id;
   createdAt?: string;
   updatedAt?: string;
+  username?: string;
 };
 
 export type CreateRequestInput = Omit<
@@ -55,7 +56,13 @@ export type CreateRequestInput = Omit<
 
 export type MatchDecision = "accepted" | "declined";
 
-type CreateUserPayload = Omit<User, "createdAt" | "updatedAt">;
+type CreateUserPayload = {
+  username: string;
+  name: string;
+  bio?: string;
+  tags: User["tags"];
+  timezone?: string;
+};
 type CreateRequestPayload = Omit<HelpRequest, "id" | "createdAt" | "updatedAt">;
 type RespondMatchPayload = {
   decision: MatchDecision;
@@ -71,7 +78,6 @@ const toMatchCard = (match: Match): MatchCard => ({
   state: match.state,
   connectionPayload: match.connectionPayload,
 });
-
 
 const toInboxItem = (match: Match): InboxItem => {
   const status: InboxItem["status"] =
@@ -106,24 +112,29 @@ export async function createUser(profile: CreateUserInput): Promise<User> {
     } as User;
   }
 
-  if (!profile.id) {
-    throw new Error("createUser requires an id when USE_MOCKS is false.");
-  }
-
   const payload: CreateUserPayload = {
-    id: profile.id,
+    username: profile.username ?? profile.name.toLowerCase().replace(/\s+/g, "_"), 
     name: profile.name,
     bio: profile.bio,
     tags: profile.tags,
     timezone: profile.timezone,
   };
 
-  const { user } = await apiFetch<{ user: User }>("/api/users", {
+  const res = await apiFetch<{ ok: boolean; id: string }>("/api/users", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 
-  return user;
+  return {
+    id: res.id,
+    username: payload.username ?? "", 
+    name: payload.name,
+    bio: payload.bio,
+    tags: payload.tags,
+    timezone: payload.timezone,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  } as any;
 }
 
 export async function createRequest(
@@ -208,7 +219,12 @@ export async function requestHelp(matchId: Id): Promise<MatchCard> {
     { method: "POST" }
   );
 
-  return toMatchCard(match);
+  const nameMap = await getUserNameMap();
+
+  return {
+    ...toMatchCard(match),
+    helperName: nameMap[match.helperId] ?? match.helperId,
+  };
 }
 
 export async function respondToMatch(

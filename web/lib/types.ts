@@ -4,7 +4,7 @@ export type Id = string;
 
 export type User = {
   id: Id;
-  username:string;
+  username: string;
   name: string;
   bio?: string;
   tags: AllowedTag[];

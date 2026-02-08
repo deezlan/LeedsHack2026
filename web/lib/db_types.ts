@@ -27,7 +27,6 @@ export interface HelpRequestDB {
   updatedAt: Date;
 }
 
-
 export type MatchState = "suggested" | "requested" | "accepted" | "declined";
 
 export interface MatchDB {

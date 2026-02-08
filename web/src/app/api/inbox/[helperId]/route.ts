@@ -35,19 +35,28 @@ export async function GET(
         .toArray();
 
       // IMPORTANT: return { items } to match your lib/api.getInbox()
-      const items = docs.map((m: any) => ({
-        // your app expects Match.id as string
-        id: m.id?.toString?.() ?? m._id?.toString?.() ?? "",
-        requestId: m.requestId?.toString?.() ?? "",
-        requesterId: m.requesterId?.toString?.() ?? "",
-        helperId: m.helperId?.toString?.() ?? "",
-        score: m.score ?? 0,
-        reasons: Array.isArray(m.reasons) ? m.reasons : [],
-        state: m.state,
-        connectionPayload: m.connectionPayload,
-        createdAt: m.createdAt ?? new Date().toISOString(),
-        updatedAt: m.updatedAt ?? m.createdAt ?? new Date().toISOString(),
-      }));
+      const items = docs.map((m: any) => {
+        const createdAt =
+          m.createdAt?.toISOString?.() ??
+          (typeof m.createdAt === "string" ? m.createdAt : new Date().toISOString());
+
+        const updatedAt =
+          m.updatedAt?.toISOString?.() ??
+          (typeof m.updatedAt === "string" ? m.updatedAt : createdAt);
+
+        return {
+          id: m._id?.toString?.() ?? m.id?.toString?.() ?? "",
+          requestId: m.requestId?.toString?.() ?? "",
+          requesterId: m.requesterId?.toString?.() ?? "",
+          helperId: m.helperId?.toString?.() ?? "",
+          score: m.score ?? 0,
+          reasons: Array.isArray(m.reasons) ? m.reasons : [],
+          state: m.state,
+          connectionPayload: m.connectionPayload,
+          createdAt,
+          updatedAt,
+        };
+      });
 
       return NextResponse.json({ items });
     }
