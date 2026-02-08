@@ -65,13 +65,42 @@ export default function ProfilePage() {
       return { ...prev, tags: Array.from(nextTags) };
     });
   };
-
-  const handleSave = (event: React.FormEvent<HTMLFormElement>) => {
+  
+  const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    
+    try {
+      // Save to database via API
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          //username: session.username, // Make sure you have username from session
+          name: profile.name,
+          bio: profile.bio,
+          tags: profile.tags,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save profile');
+      }
+
+    const data = await response.json();
+    
+    // Also save to localStorage for quick access
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
     window.dispatchEvent(new CustomEvent(PROFILE_UPDATED_EVENT));
-    setSaveMessage("Profile saved successfully.");
-  };
+    
+    setSaveMessage("Profile saved to database successfully!");
+  } catch (error) {
+    console.error('Error saving profile:', error);
+    setSaveMessage("Error saving profile. Please try again.");
+  }
+};
 
   return (
     <section className="max-w-3xl mx-auto space-y-8">
