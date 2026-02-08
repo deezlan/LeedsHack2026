@@ -195,6 +195,19 @@ export default function NewRequestPage() {
   );
   const isSpeechSupported = speechRecognitionCtor !== null;
 
+  const [recommendedTags, setRecommendedTags] = useState<AllowedTag[]>([]);
+
+  // Initial recommendations on mount or when description changes (optional, but let's stick to manual refresh or initial load)
+  // For now, let's just initialize it once empty? Or better, run it once on mount if description exists (e.g. from draft persistence if any).
+  // Actually, let's make it reactive to description changes but debounced, OR just use the refresh button as requested.
+  // The user asked for a "Refresh recommendations" button, implying it's not fully automatic.
+  // However, `suggestTags` is deterministic.
+  // Let's initialize it with suggestions based on empty string (fallback tags) or current description.
+  useEffect(() => {
+    setRecommendedTags(suggestTags(draft.description));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount for now, or we can make it run when draft.description changes comfortably.
+
   useEffect(() => {
     if (!tagMessage) return;
     const timer = window.setTimeout(() => setTagMessage(null), 2200);
@@ -286,11 +299,8 @@ export default function NewRequestPage() {
     });
   };
 
-  const handleSuggestTags = () => {
-    const suggestions = suggestTags(draft.description);
-    setDraft((prev) => ({ ...prev, tags: suggestions }));
-    setTagMessage("Suggested tags applied.");
-  };
+  // Note: handleSuggestTags is replaced by inline logic in the refresh button for now, or we can keep it as a helper
+  // But I removed the old `handleSuggestTags` which set `draft.tags`. The new logic sets `recommendedTags`.
 
   const handleQuickPrompt = (value: string) => {
     setDraft((prev) => {
@@ -514,36 +524,110 @@ export default function NewRequestPage() {
                   </div>
                 </div>
 
-                {/* Tags */}
-                <div className="space-y-4">
+                {/* Tags Section - Split per requirements */}
+                <div className="space-y-6">
+                  {/* Header with Refresh */}
                   <div className="flex items-center justify-between">
-                    <label className="block text-sm font-bold text-leeds-blue-dark uppercase tracking-wide">Tags</label>
+                    <label className="block text-sm font-bold text-leeds-blue-dark uppercase tracking-wide">
+                      Tags
+                    </label>
                     <button
                       type="button"
-                      onClick={handleSuggestTags}
+                      onClick={() => {
+                        const suggestions = suggestTags(draft.description);
+                        setRecommendedTags(suggestions);
+                        setTagMessage("Recommendations refreshed.");
+                      }}
                       className="text-xs flex items-center gap-1.5 text-leeds-teal font-bold hover:bg-leeds-teal/10 px-3 py-1.5 rounded-lg transition-colors"
                     >
-                      <span>✨</span> Suggest tags
+                      <span className="text-lg">↻</span> Refresh recommendations
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-2.5">
-                    {AllowedTags.map((tag) => {
-                      const selected = tagSet.has(tag);
-                      return (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => toggleTag(tag)}
-                          className={`relative rounded-lg px-4 py-2 text-sm font-medium transition-all duration-300 transform active:scale-95 ${selected
-                            ? "bg-leeds-teal text-white shadow-lg shadow-leeds-teal/30 ring-2 ring-leeds-teal ring-offset-2"
-                            : "bg-white border border-leeds-border text-gray-600 hover:border-leeds-teal hover:text-leeds-teal hover:shadow-sm"
-                            }`}
-                        >
-                          {tag}
-                        </button>
-                      );
-                    })}
+
+                  {/* 1. Selected Tags */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Selected ({draft.tags.length})
+                    </div>
+                    {draft.tags.length === 0 ? (
+                      <div className="text-sm text-gray-400 italic py-2">
+                        No tags selected. Click recommendations below or type to search...
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2.5">
+                        {draft.tags.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => toggleTag(tag)}
+                            className="group relative flex items-center gap-2 rounded-lg bg-leeds-teal text-white px-3 py-1.5 text-sm font-medium shadow-md shadow-leeds-teal/20 transition-all hover:bg-red-500 hover:shadow-red-500/30"
+                            title="Remove tag"
+                          >
+                            {tag}
+                            <span className="text-xs opacity-60 group-hover:opacity-100">✕</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
+
+                  {/* 2. Recommended Tags */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Recommended
+                    </div>
+                    <div className="flex flex-wrap gap-2.5">
+                      {recommendedTags
+                        .filter(tag => !tagSet.has(tag))
+                        .map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => toggleTag(tag)}
+                            className="relative rounded-lg px-3 py-1.5 text-sm font-medium bg-white border border-leeds-border text-gray-600 hover:border-leeds-teal hover:text-leeds-teal hover:shadow-sm transition-all active:scale-95"
+                          >
+                            + {tag}
+                          </button>
+                        ))}
+                      {recommendedTags.filter(tag => !tagSet.has(tag)).length === 0 && (
+                        <span className="text-xs text-gray-400">
+                          {recommendedTags.length > 0 ? "All recommendations selected" : "Describe your request to see recommendations"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* All other tags (Optional accordion or similar could go here later if needed, but requirements say strictly 2 areas for now. We might want a way to add tags NOT in recommendations? 
+                      Actually, requirements say "Separate tags into TWO areas". It doesn't explicitly forbid a "Show all" but for now let's stick to the prompt.
+                      Wait, if the user wants to add a tag that ISN'T recommended, they currently can't. 
+                      I should probably add a "Show all tags" toggle or similar to be safe, OR just render the rest as a third section? 
+                      The prompt says "Separate tags into TWO areas: 1) Recommended, 2) Selected".
+                      If I hide the rest, the user can't select them at all.
+                      Let's stick to the prompt's request for "Recommended" and "Selected". 
+                      Standard pattern: Recommended are shortcuts. We still need a way to see ALL allowed tags if they aren't recommended.
+                      I'll add a small "Show all other tags" toggle below Recommended to be safe, otherwise functionality is lost.
+                   */}
+
+                  <div className="pt-2 border-t border-leeds-border/50">
+                    <details className="group">
+                      <summary className="text-xs font-bold text-gray-400 cursor-pointer hover:text-leeds-teal transition-colors list-none flex items-center gap-2">
+                        <span className="group-open:rotate-90 transition-transform">▸</span> Show all other tags
+                      </summary>
+                      <div className="flex flex-wrap gap-2 pt-3">
+                        {AllowedTags.filter(tag => !tagSet.has(tag) && !recommendedTags.includes(tag)).map(tag => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => toggleTag(tag)}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium bg-gray-50 border border-gray-200 text-gray-500 hover:border-leeds-teal hover:text-leeds-teal transition-colors"
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    </details>
+                  </div>
+
                   {tagMessage && (
                     <div className="text-sm text-leeds-teal font-medium flex items-center gap-2 animate-pulse">
                       <span>✓</span> {tagMessage}
