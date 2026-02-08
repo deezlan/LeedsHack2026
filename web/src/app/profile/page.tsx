@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AllowedTags, type AllowedTag } from "../../../lib/tags";
+import { useRequireAuth } from "@/src/hooks/useRequireAuth";
 
 const STORAGE_KEY = "leedsHack.profile";
+const PROFILE_UPDATED_EVENT = "leedsHack.profile.updated";
 
 type ProfileDraft = {
   name: string;
@@ -18,6 +20,7 @@ const emptyProfile: ProfileDraft = {
 };
 
 export default function ProfilePage() {
+  const session = useRequireAuth();
   const [profile, setProfile] = useState<ProfileDraft>(emptyProfile);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -49,6 +52,8 @@ export default function ProfilePage() {
 
   const tagSet = useMemo(() => new Set(profile.tags), [profile.tags]);
 
+  if (!session) return null;
+
   const toggleTag = (tag: AllowedTag) => {
     setProfile((prev) => {
       const nextTags = new Set(prev.tags);
@@ -64,6 +69,7 @@ export default function ProfilePage() {
   const handleSave = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    window.dispatchEvent(new CustomEvent(PROFILE_UPDATED_EVENT));
     setSaveMessage("Profile saved successfully.");
   };
 

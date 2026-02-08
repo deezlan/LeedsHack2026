@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getInbox, respondToMatch } from "../../../lib/api";
+import { useRequireAuth } from "@/src/hooks/useRequireAuth";
 
 type InboxStatus =
   | "unread"
@@ -30,17 +31,19 @@ const statusConfig: Record<InboxStatus, { label: string; className: string }> = 
 };
 
 export default function InboxPage() {
+  const session = useRequireAuth();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionIds, setActionIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    if (!session) return;
     let isMounted = true;
     setLoading(true);
     setErrorMessage(null);
 
-    getInbox(helperId)
+    getInbox(session.userId)
       .then((data) => {
         if (!isMounted) return;
         setItems(data as InboxItem[]);
@@ -59,9 +62,12 @@ export default function InboxPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [session]);
 
-  const handleDecision = async (matchId: string, decision: "accepted" | "declined") => {
+  const handleDecision = async (
+    matchId: string,
+    decision: "accepted" | "declined"
+  ) => {
     setActionIds((prev) => new Set(prev).add(matchId));
     setErrorMessage(null);
 
@@ -82,8 +88,9 @@ export default function InboxPage() {
     }
   };
 
-
   const itemList = useMemo(() => items, [items]);
+
+  if (!session) return null;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-fadeUp">
@@ -123,6 +130,8 @@ export default function InboxPage() {
         <div className="space-y-4">
           {itemList.map((item) => {
             const isActing = actionIds.has(item.matchId);
+            const isResolved =
+              item.status === "accepted" || item.status === "declined";
             const statusFn = statusConfig[item.status] || statusConfig.unread;
 
             // Initials

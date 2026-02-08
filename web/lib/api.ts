@@ -1,5 +1,6 @@
 ﻿import type { HelpRequest, Id, Match, User } from "./types";
 import { mockInbox, mockMatches, type InboxItem, type MatchCard } from "./mock";
+import type { AuthSession } from "./auth";
 import type { ConnectionMessage } from "./types";
 
 const USE_MOCKS =
@@ -266,6 +267,7 @@ export async function getInbox(helperId: Id): Promise<InboxItem[]> {
     { method: "GET" }
   );
 
+  // Prefer real names if available (works in seed-mode via /api/debug/store)
   const nameMap = await getUserNameMap();
 
   return items.map((m) => {
@@ -295,7 +297,6 @@ export async function getMatch(matchId: Id): Promise<MatchCard> {
 
   const match = await apiFetch<Match>(`/api/matches/${matchId}`, { method: "GET" });
 
-  // optional: name map (same trick as generate)
   const nameMap = await getUserNameMap();
 
   return {
@@ -305,7 +306,7 @@ export async function getMatch(matchId: Id): Promise<MatchCard> {
 }
 
 export async function getMessages(matchId: Id): Promise<ConnectionMessage[]> {
-  if (USE_MOCKS) return []; // or mock later
+  if (USE_MOCKS) return []; // can mock later
 
   const { messages } = await apiFetch<{ messages: ConnectionMessage[] }>(
     `/api/connections/${matchId}/messages`,
@@ -345,4 +346,106 @@ export async function sendMessage(input: {
   );
 
   return message;
+}
+
+// ---------------------------------------------------------------------------
+// Auth API
+// ---------------------------------------------------------------------------
+
+export type AuthResponse = {
+  session: AuthSession;
+};
+
+const MOCK_CREDENTIALS_KEY = "campusConnect.credentials";
+
+type MockCredential = {
+  email: string;
+  password: string;
+  userId: string;
+  displayName: string;
+};
+
+function getMockCredentials(): MockCredential[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(
+      window.localStorage.getItem(MOCK_CREDENTIALS_KEY) || "[]",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveMockCredentials(creds: MockCredential[]): void {
+  window.localStorage.setItem(MOCK_CREDENTIALS_KEY, JSON.stringify(creds));
+}
+
+export async function signup(
+  email: string,
+  password: string,
+  displayName: string,
+): Promise<AuthResponse> {
+  if (USE_MOCKS) {
+    const existing = getMockCredentials();
+    if (existing.some((c) => c.email.toLowerCase() === email.toLowerCase())) {
+      throw new Error("An account with this email already exists.");
+    }
+    const userId = makeId("user");
+    saveMockCredentials([
+      ...existing,
+      { email, password, userId, displayName },
+    ]);
+
+    const session: AuthSession = {
+      userId,
+      email,
+      displayName,
+      token: `mock_token_${userId}`,
+      createdAt: nowIso(),
+    };
+    return { session };
+  }
+
+  return apiFetch<AuthResponse>("/api/auth/signup", {
+    method: "POST",
+    body: JSON.stringify({ email, password, displayName }),
+  });
+}
+
+export async function login(
+  email: string,
+  password: string,
+): Promise<AuthResponse> {
+  if (USE_MOCKS) {
+    const existing = getMockCredentials();
+    const match = existing.find(
+      (c) =>
+        c.email.toLowerCase() === email.toLowerCase() &&
+        c.password === password,
+    );
+    if (!match) {
+      throw new Error("Invalid email or password.");
+    }
+
+    const session: AuthSession = {
+      userId: match.userId,
+      email: match.email,
+      displayName: match.displayName,
+      token: `mock_token_${match.userId}`,
+      createdAt: nowIso(),
+    };
+    return { session };
+  }
+
+  return apiFetch<AuthResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function logout(): void {
+  if (USE_MOCKS) {
+    return;
+  }
+  apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
 }
