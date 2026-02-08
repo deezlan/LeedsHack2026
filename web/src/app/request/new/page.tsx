@@ -484,7 +484,18 @@ export default function NewRequestPage() {
                       className="w-full resize-none rounded-2xl border-2 border-transparent bg-white shadow-inner px-6 py-5 pr-16 text-lg text-leeds-blue-dark placeholder:text-gray-300 focus:border-leeds-teal focus:ring-4 focus:ring-leeds-teal/10 transition-all outline-none"
                     />
                     <div className="w-full">
-                      <VoiceLoop />
+                      <VoiceLoop
+                        description={draft.description}
+                        onTranscript={(text) =>
+                          setDraft((p) => ({
+                            ...p,
+                            description: (p.description + " " + text).trim(),
+                          }))
+                        }
+                        onTags={(tags) => setRecommendedTags(tags as any)}
+                        onReply={(reply) => setSpeechMessage(reply)}
+                      />
+
                     </div>
                     <div className="absolute bottom-4 right-4 text-gray-300 text-[10px] pointer-events-none opacity-0 group-focus-within/input:opacity-100 transition-opacity">
                       Markdown supported
