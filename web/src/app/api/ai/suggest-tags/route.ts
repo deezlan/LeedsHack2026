@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { AllowedTags } from "../../../../../lib/tags";
 
-
 function safeJsonParse(raw: string) {
   const cleaned = raw
     .trim()
