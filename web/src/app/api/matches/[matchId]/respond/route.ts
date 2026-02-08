@@ -7,13 +7,19 @@ export async function POST(
 ) {
   try {
     const { matchId } = await ctx.params;
-
     const body = await req.json();
+
+    // Accept both: decision ("accepted"/"declined") OR action ("accept"/"decline")
+    const decision = body?.decision as "accepted" | "declined" | undefined;
     const action = body?.action as "accept" | "decline" | undefined;
+
+    const nextState =
+      decision ?? (action === "accept" ? "accepted" : action === "decline" ? "declined" : undefined);
+
     const connectionPayload = body?.connectionPayload as { message?: string; nextStep?: string } | undefined;
 
-    if (action !== "accept" && action !== "decline") {
-      return NextResponse.json({ error: "action must be accept|decline" }, { status: 400 });
+    if (nextState !== "accepted" && nextState !== "declined") {
+      return NextResponse.json({ error: "Provide decision (accepted|declined) or action (accept|decline)" }, { status: 400 });
     }
 
     const db = await getDb();
@@ -25,14 +31,13 @@ export async function POST(
     }
 
     const nowIso = new Date().toISOString();
-    const nextState = action === "accept" ? "accepted" : "declined";
-
     const update: any = { state: nextState, updatedAt: nowIso };
     if (nextState === "accepted") update.connectionPayload = connectionPayload ?? {};
 
     await db.collection("matches").updateOne({ id: matchId }, { $set: update });
 
-    return NextResponse.json({ id: matchId, state: nextState });
+    const updated = await db.collection("matches").findOne({ id: matchId });
+    return NextResponse.json({ match: updated });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "unknown error" }, { status: 500 });
   }

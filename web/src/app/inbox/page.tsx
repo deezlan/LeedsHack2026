@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getInbox, respondToMatch } from "../../../lib/api";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { useRequireAuth } from "@/src/hooks/useRequireAuth";
 
 type InboxStatus =
   | "unread"
@@ -19,6 +19,8 @@ type InboxItem = {
   preview: string;
   status: InboxStatus;
 };
+
+const helperId = "u2";
 
 const statusConfig: Record<InboxStatus, { label: string; className: string }> = {
   unread: { label: "Unread", className: "bg-leeds-teal/10 text-leeds-teal" },
@@ -71,15 +73,12 @@ export default function InboxPage() {
 
     try {
       await respondToMatch(matchId, decision);
-      setItems((prev) =>
-        prev.map((item) =>
-          item.matchId === matchId ? { ...item, status: decision } : item
-        )
-      );
+
+      // Re-fetch inbox so it reflects backend state
+      const refreshed = await getInbox(helperId);
+      setItems(refreshed as InboxItem[]);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Could not update match."
-      );
+      setErrorMessage(error instanceof Error ? error.message : "Could not update match.");
     } finally {
       setActionIds((prev) => {
         const next = new Set(prev);
@@ -200,7 +199,7 @@ export default function InboxPage() {
                   )}
 
                   {/* If actionable */}
-                  {(!isResolved) && (
+                  {item.status === "action-needed" && (
                     <div className="flex gap-2">
                       <button
                         type="button"

@@ -1,6 +1,7 @@
 ﻿import type { HelpRequest, Id, Match, User } from "./types";
 import { mockInbox, mockMatches, type InboxItem, type MatchCard } from "./mock";
 import type { AuthSession } from "./auth";
+import type { ConnectionMessage } from "./types";
 
 const USE_MOCKS =
   process.env.NEXT_PUBLIC_USE_MOCKS === undefined ||
@@ -42,6 +43,7 @@ export type CreateUserInput = Omit<User, "id" | "createdAt" | "updatedAt"> & {
   id?: Id;
   createdAt?: string;
   updatedAt?: string;
+  username?: string;
 };
 
 export type CreateRequestInput = Omit<
@@ -55,7 +57,13 @@ export type CreateRequestInput = Omit<
 
 export type MatchDecision = "accepted" | "declined";
 
-type CreateUserPayload = Omit<User, "createdAt" | "updatedAt">;
+type CreateUserPayload = {
+  username: string;
+  name: string;
+  bio?: string;
+  tags: User["tags"];
+  timezone?: string;
+};
 type CreateRequestPayload = Omit<HelpRequest, "id" | "createdAt" | "updatedAt">;
 type RespondMatchPayload = {
   decision: MatchDecision;
@@ -68,19 +76,31 @@ const toMatchCard = (match: Match): MatchCard => ({
   helperName: match.helperId,
   score: match.score,
   reasons: match.reasons,
+  state: match.state,
+  connectionPayload: match.connectionPayload,
 });
 
-const toInboxItem = (match: Match): InboxItem => ({
-  matchId: match.id,
-  requestId: match.requestId,
-  // TODO: replace IDs with display names when user lookup is available.
-  fromUserName: match.requesterId,
-  preview:
-    match.connectionPayload?.message ??
-    match.connectionPayload?.nextStep ??
-    "New match request.",
-  status: match.state === "requested" ? "action-needed" : "read",
-});
+const toInboxItem = (match: Match): InboxItem => {
+  const status: InboxItem["status"] =
+    match.state === "requested"
+      ? "action-needed"
+      : match.state === "accepted"
+        ? "accepted"
+        : match.state === "declined"
+          ? "declined"
+          : "read";
+
+  return {
+    matchId: match.id,
+    requestId: match.requestId,
+    fromUserName: match.requesterId, // later replace with name lookup
+    preview:
+      match.connectionPayload?.message ??
+      match.connectionPayload?.nextStep ??
+      "New match request.",
+    status,
+  };
+};
 
 export async function createUser(profile: CreateUserInput): Promise<User> {
   if (USE_MOCKS) {
@@ -93,24 +113,29 @@ export async function createUser(profile: CreateUserInput): Promise<User> {
     } as User;
   }
 
-  if (!profile.id) {
-    throw new Error("createUser requires an id when USE_MOCKS is false.");
-  }
-
   const payload: CreateUserPayload = {
-    id: profile.id,
+    username: profile.username ?? profile.name.toLowerCase().replace(/\s+/g, "_"), 
     name: profile.name,
     bio: profile.bio,
     tags: profile.tags,
     timezone: profile.timezone,
   };
 
-  const { user } = await apiFetch<{ user: User }>("/api/users", {
+  const res = await apiFetch<{ ok: boolean; id: string }>("/api/users", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 
-  return user;
+  return {
+    id: res.id,
+    username: payload.username ?? "", 
+    name: payload.name,
+    bio: payload.bio,
+    tags: payload.tags,
+    timezone: payload.timezone,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  } as any;
 }
 
 export async function createRequest(
@@ -168,7 +193,17 @@ export async function generateMatches(
     }
   );
 
-  return matches.map(toMatchCard);
+  const res = await fetch("/api/debug/store", { cache: "no-store" });
+  let nameMap: Record<string, string> = {};
+  if (res.ok) {
+    const data = await res.json();
+    for (const u of data.users ?? []) nameMap[u.id] = u.name;
+  }
+
+  return matches.map((m) => ({
+    ...toMatchCard(m),
+    helperName: nameMap[m.helperId] ?? m.helperId,
+  }));
 }
 
 export async function requestHelp(matchId: Id): Promise<MatchCard> {
@@ -185,7 +220,12 @@ export async function requestHelp(matchId: Id): Promise<MatchCard> {
     { method: "POST" }
   );
 
-  return toMatchCard(match);
+  const nameMap = await getUserNameMap();
+
+  return {
+    ...toMatchCard(match),
+    helperName: nameMap[match.helperId] ?? match.helperId,
+  };
 }
 
 export async function respondToMatch(
@@ -227,7 +267,85 @@ export async function getInbox(helperId: Id): Promise<InboxItem[]> {
     { method: "GET" }
   );
 
-  return items.map(toInboxItem);
+  // Prefer real names if available (works in seed-mode via /api/debug/store)
+  const nameMap = await getUserNameMap();
+
+  return items.map((m) => {
+    const item = toInboxItem(m);
+    return {
+      ...item,
+      fromUserName: nameMap[m.requesterId] ?? item.fromUserName,
+    };
+  });
+}
+
+async function getUserNameMap(): Promise<Record<string, string>> {
+  const res = await fetch("/api/debug/store", { cache: "no-store" });
+  if (!res.ok) return {};
+  const data = await res.json();
+  const map: Record<string, string> = {};
+  for (const u of data.users ?? []) map[u.id] = u.name;
+  return map;
+}
+
+export async function getMatch(matchId: Id): Promise<MatchCard> {
+  if (USE_MOCKS) {
+    const match = mockMatches.find((m) => m.id === matchId);
+    if (!match) throw new Error(`Mock match not found: ${matchId}`);
+    return match;
+  }
+
+  const match = await apiFetch<Match>(`/api/matches/${matchId}`, { method: "GET" });
+
+  const nameMap = await getUserNameMap();
+
+  return {
+    ...toMatchCard(match),
+    helperName: nameMap[match.helperId] ?? match.helperId,
+  };
+}
+
+export async function getMessages(matchId: Id): Promise<ConnectionMessage[]> {
+  if (USE_MOCKS) return []; // can mock later
+
+  const { messages } = await apiFetch<{ messages: ConnectionMessage[] }>(
+    `/api/connections/${matchId}/messages`,
+    { method: "GET" }
+  );
+
+  return messages;
+}
+
+export async function sendMessage(input: {
+  matchId: Id;
+  senderId: Id;
+  senderRole: "requester" | "helper";
+  text: string;
+}): Promise<ConnectionMessage> {
+  if (USE_MOCKS) {
+    return {
+      id: makeId("msg"),
+      matchId: input.matchId,
+      senderId: input.senderId,
+      senderRole: input.senderRole,
+      text: input.text,
+      createdAt: nowIso(),
+    };
+  }
+
+  const { message } = await apiFetch<{ message: ConnectionMessage }>(
+    `/api/connections/${input.matchId}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        text: input.text,
+        senderId: input.senderId,
+        senderRole: input.senderRole,
+      }),
+    }
+  );
+
+  return message;
 }
 
 // ---------------------------------------------------------------------------

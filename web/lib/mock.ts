@@ -6,6 +6,8 @@ export type MatchCard = {
   helperName: string;
   score: number;
   reasons: string[];
+  state?: "suggested" | "requested" | "accepted" | "declined";
+  connectionPayload?: { message?: string; nextStep?: string };
 };
 
 export type InboxItem = {
@@ -13,7 +15,7 @@ export type InboxItem = {
   requestId: Id;
   fromUserName: string;
   preview: string;
-  status: "unread" | "read" | "action-needed";
+  status: "unread" | "read" | "action-needed" | "accepted" | "declined";
 };
 
 export const mockMatches: MatchCard[] = [

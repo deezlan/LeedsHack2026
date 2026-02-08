@@ -1,195 +1,135 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
-import { mockMatches } from "../../../../lib/mock";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
-
-type ChatAttachment = {
-  name: string;
-  size: number;
-  type: string;
-};
-
-type ChatMessage = {
-  id: string;
-  text: string;
-  attachments?: ChatAttachment[];
-  sender: "me" | "them";
-  createdAt: string;
-};
-
-function isChatAttachment(value: unknown): value is ChatAttachment {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<ChatAttachment>;
-  return (
-    typeof candidate.name === "string" &&
-    typeof candidate.size === "number" &&
-    typeof candidate.type === "string"
-  );
-}
-
-function isChatMessage(value: unknown): value is ChatMessage {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<ChatMessage>;
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.text === "string" &&
-    (candidate.attachments === undefined ||
-      (Array.isArray(candidate.attachments) &&
-        candidate.attachments.every(isChatAttachment))) &&
-    (candidate.sender === "me" || candidate.sender === "them") &&
-    typeof candidate.createdAt === "string"
-  );
-}
-
-function formatAttachmentSize(size: number): string {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useRequireAuth } from "@/src/hooks/useRequireAuth";
+import { getMatch, getMessages, sendMessage } from "../../../../lib/api";
+import type { ConnectionMessage } from "../../../../lib/types";
+import type { MatchCard } from "../../../../lib/mock";
 
 export default function ConnectionPage() {
   const session = useRequireAuth();
+  const router = useRouter();
+
   const params = useParams<{ matchId: string }>();
   const matchIdParam = params?.matchId ?? "";
   const matchId = Array.isArray(matchIdParam) ? matchIdParam[0] : matchIdParam;
 
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
   const [message, setMessage] = useState("");
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [storageWarning, setStorageWarning] = useState<string | null>(null);
-  const [syncWarning, setSyncWarning] = useState<string | null>(null);
-  const [loadedFromStorage, setLoadedFromStorage] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [match, setMatch] = useState<MatchCard | null>(null);
+  const [messages, setMessages] = useState<ConnectionMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const storageKey = useMemo(() => `chat:${matchId}`, [matchId]);
+  // If auth is still loading or redirecting
+  if (!session) return null;
 
-  const match = useMemo(
-    () => mockMatches.find((item) => item.id === matchId),
-    [matchId]
-  );
+  // Derive current user context from session (best-effort)
+  const CURRENT_USER_ID = session.userId;
 
-  const initials = match?.helperName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+  // If your session includes role, use it; otherwise default.
+  // You can improve this later by deriving role from match (helperId vs requesterId)
+  const CURRENT_ROLE: "helper" | "requester" =
+    (session as any).role === "requester" || (session as any).role === "helper"
+      ? (session as any).role
+      : "requester";
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    setLoadedFromStorage(false);
-    setStorageWarning(null);
-
     if (!matchId) {
+      setMatch(null);
       setMessages([]);
-      setLoadedFromStorage(true);
+      setLoading(false);
       return;
     }
 
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) {
-        setMessages([]);
-      } else {
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) {
-          setMessages([]);
+    let isMounted = true;
+    setLoading(true);
+    setErrorMessage(null);
+
+    getMatch(matchId)
+      .then(async (m) => {
+        if (!isMounted) return;
+        setMatch(m);
+
+        if (m.state === "accepted") {
+          const msgs = await getMessages(matchId);
+          if (!isMounted) return;
+          setMessages(msgs);
         } else {
-          setMessages(parsed.filter(isChatMessage));
+          setMessages([]);
         }
-      }
-    } catch {
-      setMessages([]);
-      setStorageWarning("Could not load older messages.");
-    } finally {
-      setLoadedFromStorage(true);
-    }
-  }, [matchId, storageKey]);
+      })
+      .catch((e) => {
+        if (!isMounted) return;
+        setErrorMessage(
+          e instanceof Error ? e.message : "Failed to load connection."
+        );
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [matchId]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !loadedFromStorage) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
+
+  const initials = useMemo(() => {
+    if (!match?.helperName) return "?";
+    return match.helperName
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  }, [match?.helperName]);
+
+  const scorePercent = match ? Math.round(match.score * 100) : 0;
+
+  const stateBadge =
+    match?.state === "accepted"
+      ? "bg-emerald-100 text-emerald-700"
+      : match?.state === "requested"
+        ? "bg-amber-100 text-amber-700 font-bold"
+        : match?.state === "declined"
+          ? "bg-rose-100 text-rose-700"
+          : "bg-gray-100 text-gray-600";
+
+  const onSend = async () => {
+    if (!match || match.state !== "accepted") return;
+
+    const text = message.trim();
+    if (!text) return;
+
+    setSending(true);
+    setErrorMessage(null);
 
     try {
-      window.localStorage.setItem(storageKey, JSON.stringify(messages));
-      setStorageWarning(null);
-    } catch {
-      setStorageWarning("Message saved in chat, but not persisted locally.");
-    }
-  }, [loadedFromStorage, messages, storageKey]);
+      const created = await sendMessage({
+        matchId: match.id,
+        senderId: CURRENT_USER_ID,
+        senderRole: CURRENT_ROLE,
+        text,
+      });
 
-  const syncMessage = useCallback(
-    async (nextMessage: ChatMessage) => {
-      try {
-        const response = await fetch("/api/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            matchId,
-            text: nextMessage.text,
-            attachments: nextMessage.attachments ?? [],
-            createdAt: nextMessage.createdAt,
-          }),
-        });
-
-        if (response.status === 404) return;
-        if (!response.ok) throw new Error("Message sync failed");
-      } catch {
-        setSyncWarning("Message sent, but server sync failed.");
-      }
-    },
-    [matchId]
-  );
-
-  const handleSend = useCallback(
-    (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const trimmed = message.trim();
-      if (!trimmed && attachments.length === 0) return;
-
-      const nextMessage: ChatMessage = {
-        id: `msg_${Date.now()}`,
-        text: trimmed,
-        attachments: attachments.length > 0 ? attachments : undefined,
-        sender: "me",
-        createdAt: new Date().toISOString(),
-      };
-
+      setMessages((prev) => [...prev, created]);
       setMessage("");
-      setAttachments([]);
-      setSyncWarning(null);
-      setMessages((prev) => [...prev, nextMessage]);
-      void syncMessage(nextMessage);
-    },
-    [attachments, message, syncMessage]
-  );
-
-  const handleSelectAttachments = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const fileList = event.target.files;
-      if (!fileList || fileList.length === 0) return;
-
-      const nextAttachments: ChatAttachment[] = Array.from(fileList).map(
-        (file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type || "application/octet-stream",
-        })
-      );
-
-      setAttachments((prev) => [...prev, ...nextAttachments]);
-      event.target.value = "";
-    },
-    []
-  );
-
-  const handleRemoveAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
-  }, []);
-
-  if (!session) return null;
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Failed to send message.");
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <div className="h-[calc(100vh-140px)] min-h-[600px] flex flex-col lg:flex-row gap-6 animate-fadeUp">
@@ -199,11 +139,11 @@ export default function ConnectionPage() {
         <div className="p-4 border-b border-leeds-border flex items-center justify-between bg-leeds-cream/30">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-full bg-leeds-blue flex items-center justify-center text-white font-bold shadow-sm">
-              {initials || "?"}
+              {initials}
             </div>
             <div>
               <h2 className="font-bold text-leeds-blue-dark">
-                {match ? match.helperName : "Unknown Helper"}
+                {match?.helperName ?? (loading ? "Loading..." : "Unknown Helper")}
               </h2>
               <p className="text-xs text-leeds-teal font-medium flex items-center gap-1">
                 <span className="block w-1.5 h-1.5 rounded-full bg-leeds-teal animate-pulse" />
@@ -211,147 +151,147 @@ export default function ConnectionPage() {
               </p>
             </div>
           </div>
-          <button className="p-2 rounded-full hover:bg-leeds-border/50 text-gray-500">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
-          </button>
+
+          {match?.state && (
+            <span
+              className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${stateBadge}`}
+            >
+              {match.state}
+            </span>
+          )}
         </div>
 
-        {/* Chat Messages */}
-        <div className="flex-1 p-6 bg-leeds-cream/20 overflow-y-auto space-y-6">
-          {messages.length === 0 ? (
+        {/* Messages */}
+        <div
+          ref={scrollRef}
+          className="flex-1 p-6 bg-leeds-cream/20 overflow-y-auto space-y-6"
+        >
+          {loading ? (
+            <div className="h-full flex items-center justify-center text-sm text-gray-500">
+              Loading connection…
+            </div>
+          ) : errorMessage ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-700">
+              <p className="font-semibold">Couldn’t load this connection</p>
+              <p className="text-sm mt-1">{errorMessage}</p>
+            </div>
+          ) : match?.state !== "accepted" ? (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-3 opacity-70">
+              <div className="w-16 h-16 bg-leeds-blue/5 rounded-full flex items-center justify-center text-2xl">
+                ⏳
+              </div>
+              <p className="text-sm text-gray-600 max-w-sm">
+                This connection isn’t active yet.
+                {match?.state === "requested" && " Waiting for the helper to accept."}
+                {match?.state === "declined" && " The helper declined this request."}
+              </p>
+            </div>
+          ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-60">
               <div className="w-16 h-16 bg-leeds-blue/5 rounded-full flex items-center justify-center text-2xl">
                 👋
               </div>
               <p className="text-sm text-gray-500 max-w-xs">
-                This is the start of your conversation with <span className="font-semibold text-leeds-blue-dark">{match?.helperName}</span>.
-                Say hello and share your request details!
+                This is the start of your conversation with{" "}
+                <span className="font-semibold text-leeds-blue-dark">
+                  {match?.helperName}
+                </span>
+                . Say hello and share your request details!
               </p>
             </div>
           ) : (
-            messages.map((item) => (
-              <div
-                key={item.id}
-                className={`flex ${item.sender === "me" ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${item.sender === "me"
-                    ? "bg-leeds-blue text-white"
-                    : "bg-white border border-leeds-border text-leeds-blue-dark"
-                    }`}
-                >
-                  {item.text && <p>{item.text}</p>}
-                  {item.attachments && item.attachments.length > 0 && (
-                    <div className={`${item.text ? "mt-2" : ""} space-y-1`}>
-                      {item.attachments.map((attachment, index) => (
-                        <div
-                          key={`${attachment.name}-${attachment.size}-${index}`}
-                          className={`rounded-lg px-2 py-1 text-xs ${item.sender === "me"
-                            ? "bg-white/20 text-white"
-                            : "bg-leeds-cream text-leeds-blue-dark"
-                            }`}
-                        >
-                          <p className="truncate font-medium">{attachment.name}</p>
-                          <p className="opacity-80">
-                            {attachment.type} - {formatAttachmentSize(attachment.size)}
-                          </p>
-                        </div>
-                      ))}
+            <div className="space-y-3">
+              {messages.map((m) => {
+                const isMine = m.senderId === CURRENT_USER_ID;
+
+                return (
+                  <div
+                    key={m.id}
+                    className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm ${
+                        isMine
+                          ? "bg-leeds-blue text-white"
+                          : "bg-white border border-leeds-border text-leeds-blue-dark"
+                      }`}
+                    >
+                      <div className="whitespace-pre-wrap break-words">{m.text}</div>
+                      <div
+                        className={`mt-1 text-[10px] opacity-70 ${
+                          isMine ? "text-white/70" : "text-gray-400"
+                        }`}
+                      >
+                        {new Date(m.createdAt).toLocaleString()}
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            ))
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
-        {/* Input Area */}
+        {/* Input */}
         <div className="p-4 bg-white border-t border-leeds-border">
-          {attachments.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
-              {attachments.map((attachment, index) => (
-                <div
-                  key={`${attachment.name}-${attachment.size}-${index}`}
-                  className="inline-flex items-center gap-2 rounded-full bg-leeds-cream px-3 py-1.5 text-xs text-leeds-blue-dark border border-leeds-border"
-                >
-                  <span className="max-w-[180px] truncate">{attachment.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveAttachment(index)}
-                    className="rounded-full w-4 h-4 inline-flex items-center justify-center bg-white text-gray-500 hover:text-red-600"
-                    aria-label={`Remove ${attachment.name}`}
-                  >
-                    x
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <form className="flex gap-2" onSubmit={handleSend}>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              onChange={handleSelectAttachments}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-full border border-leeds-border px-3 py-2.5 text-sm text-leeds-blue hover:bg-leeds-cream transition-colors"
-              aria-label="Attach file"
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21.44 11.05L12.25 20.24a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.65l-9.2 9.2a2 2 0 0 1-2.82-2.83l8.48-8.48" />
-              </svg>
-            </button>
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSend();
+            }}
+          >
             <input
               type="text"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 rounded-full border border-leeds-border bg-gray-50 px-4 py-2.5 text-sm focus:border-leeds-teal focus:ring-2 focus:ring-leeds-teal/20 outline-none transition-all"
+              placeholder={
+                match?.state === "accepted"
+                  ? "Type a message..."
+                  : "Connection not active yet"
+              }
+              disabled={match?.state !== "accepted"}
+              className="flex-1 rounded-full border border-leeds-border bg-gray-50 px-4 py-2.5 text-sm focus:border-leeds-teal focus:ring-2 focus:ring-leeds-teal/20 outline-none transition-all disabled:opacity-60"
             />
             <button
               type="submit"
-              disabled={!message.trim() && attachments.length === 0}
+              disabled={sending || !message.trim() || match?.state !== "accepted"}
               className="rounded-full bg-leeds-blue text-white px-5 py-2.5 text-sm font-bold shadow-sm hover:bg-leeds-blue-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Send
+              {sending ? "Sending..." : "Send"}
             </button>
           </form>
-          {(storageWarning || syncWarning) && (
-            <p className="mt-2 text-xs text-amber-700">{storageWarning ?? syncWarning}</p>
-          )}
         </div>
       </div>
 
-      {/* Sidebar Info */}
+      {/* Sidebar */}
       <div className="w-full lg:w-80 flex flex-col gap-4">
         <div className="bg-white rounded-2xl border border-leeds-border p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-leeds-blue-dark mb-4">Match Details</h3>
+          <h3 className="text-sm font-bold text-leeds-blue-dark mb-4">
+            Match Details
+          </h3>
 
           {match ? (
             <div className="space-y-4">
               <div className="flex justify-between items-center p-3 bg-leeds-cream rounded-xl">
-                <span className="text-xs font-semibold text-gray-500">Compatibility</span>
-                <span className="text-lg font-bold text-leeds-teal">{(match.score * 100).toFixed(0)}%</span>
+                <span className="text-xs font-semibold text-gray-500">
+                  Compatibility
+                </span>
+                <span className="text-lg font-bold text-leeds-teal">
+                  {scorePercent}%
+                </span>
               </div>
 
               <div>
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Why you matched</h4>
+                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  Why you matched
+                </h4>
                 <ul className="space-y-2">
                   {match.reasons.map((reason, i) => (
-                    <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                    <li
+                      key={i}
+                      className="text-xs text-gray-600 flex items-start gap-2"
+                    >
                       <span className="text-leeds-teal mt-0.5">•</span>
                       <span className="leading-snug">{reason}</span>
                     </li>
@@ -366,20 +306,54 @@ export default function ConnectionPage() {
 
         <div className="bg-leeds-blue rounded-2xl border border-leeds-blue-dark p-5 shadow-sm text-white">
           <h3 className="text-sm font-bold mb-2">Next Steps</h3>
-          <ul className="space-y-3 text-xs text-white/80">
-            <li className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">1</span>
-              Introduce yourself and your project.
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">2</span>
-              Schedule a 15-min intro call.
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">3</span>
-              Share documents or repo links.
-            </li>
-          </ul>
+
+          {match?.state === "accepted" && match.connectionPayload ? (
+            <ul className="space-y-3 text-xs text-white/80">
+              {match.connectionPayload.message && (
+                <li className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                    1
+                  </span>
+                  {match.connectionPayload.message}
+                </li>
+              )}
+              {match.connectionPayload.nextStep && (
+                <li className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                    2
+                  </span>
+                  {match.connectionPayload.nextStep}
+                </li>
+              )}
+              {!match.connectionPayload.message &&
+                !match.connectionPayload.nextStep && (
+                  <li className="text-xs text-white/80">
+                    Connection accepted — send a message to start.
+                  </li>
+                )}
+            </ul>
+          ) : (
+            <ul className="space-y-3 text-xs text-white/80">
+              <li className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                  1
+                </span>
+                Introduce yourself and your project.
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                  2
+                </span>
+                Schedule a 15-min intro call.
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                  3
+                </span>
+                Share documents or repo links.
+              </li>
+            </ul>
+          )}
         </div>
       </div>
     </div>

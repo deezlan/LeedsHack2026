@@ -7,8 +7,8 @@ export async function POST(
 ) {
   try {
     const { matchId } = await ctx.params;
-
     const db = await getDb();
+
     const match = await db.collection("matches").findOne({ id: matchId });
     if (!match) return NextResponse.json({ error: "match not found" }, { status: 404 });
 
@@ -22,7 +22,8 @@ export async function POST(
       { $set: { state: "requested", updatedAt: nowIso } }
     );
 
-    return NextResponse.json({ id: matchId, state: "requested" });
+    const updated = await db.collection("matches").findOne({ id: matchId });
+    return NextResponse.json({ match: updated });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "unknown error" }, { status: 500 });
   }

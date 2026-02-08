@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { generateMatches, requestHelp } from "../../../../lib/api";
 import type { MatchCard } from "../../../../lib/mock";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { useRequireAuth } from "@/src/hooks/useRequireAuth";
+
+type MatchState = "suggested" | "requested" | "accepted" | "declined";
 
 export default function MatchesPage() {
+  const router = useRouter();
   const session = useRequireAuth();
+
   const params = useParams<{ requestId: string }>();
   const requestIdParam = params?.requestId ?? "";
   const requestId = Array.isArray(requestIdParam)
@@ -17,7 +21,6 @@ export default function MatchesPage() {
   const [matches, setMatches] = useState<MatchCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
   const [requestingIds, setRequestingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -29,7 +32,6 @@ export default function MatchesPage() {
     let isMounted = true;
     setLoading(true);
     setErrorMessage(null);
-    setRequestedIds(new Set());
     setRequestingIds(new Set());
     setMatches([]);
 
@@ -55,13 +57,25 @@ export default function MatchesPage() {
   }, [requestId]);
 
   const handleRequestHelp = async (matchId: string) => {
-    if (requestedIds.has(matchId) || requestingIds.has(matchId)) return;
+    if (requestingIds.has(matchId)) return;
+
     setRequestingIds((prev) => new Set(prev).add(matchId));
     setErrorMessage(null);
 
     try {
-      await requestHelp(matchId);
-      setRequestedIds((prev) => new Set(prev).add(matchId));
+      const updated = await requestHelp(matchId); // should return MatchCard with state
+      
+      setMatches((prev) =>
+        prev.map((m) =>
+          m.id === matchId
+            ? {
+                ...m,           // keep current helperName etc
+                ...updated,     // overwrite state/score/reasons/etc
+                helperName: m.helperName, // force keep display name
+              }
+            : m
+        )
+      );
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not request help."
@@ -78,6 +92,19 @@ export default function MatchesPage() {
   const matchList = useMemo(() => matches, [matches]);
 
   if (!session) return null;
+  const stateToLabel = (state?: MatchState, isRequesting?: boolean) => {
+    if (isRequesting) return "Sending...";
+    if (state === "requested") return "Request Sent";
+    if (state === "accepted") return "Accepted";
+    if (state === "declined") return "Declined";
+    return "Connect";
+  };
+
+  const isConnectDisabled = (state?: MatchState, isRequesting?: boolean) => {
+    if (isRequesting) return true;
+    // only allow clicking if the backend says it's still suggested
+    return state !== "suggested";
+  };
 
   return (
     <div className="space-y-8 animate-fadeUp">
@@ -107,17 +134,34 @@ export default function MatchesPage() {
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {matchList.map((match) => {
-            const isRequested = requestedIds.has(match.id);
             const isRequesting = requestingIds.has(match.id);
             const scorePercent = Math.round(match.score * 100);
+            const state = match.state
 
-            // Generate initials
             const initials = match.helperName
               .split(" ")
-              .map(n => n[0])
+              .map((n) => n[0])
               .join("")
               .toUpperCase()
               .slice(0, 2);
+
+            const disabled = isConnectDisabled(state, isRequesting);
+
+            const buttonLabel =
+              state === "accepted"
+                ? "Open Chat"
+                : stateToLabel(state, isRequesting);
+
+            const buttonDisabled =
+              isRequesting || state === "requested" || state === "declined";
+
+            const handlePrimaryClick = () => {
+              if (state === "accepted") {
+                router.push(`/connections/${match.id}`);
+                return;
+              }
+              handleRequestHelp(match.id);
+            };
 
             return (
               <div
@@ -130,8 +174,13 @@ export default function MatchesPage() {
                     <div className="h-12 w-12 rounded-full bg-leeds-blue flex items-center justify-center text-white font-bold text-lg shadow-md group-hover:bg-leeds-teal transition-colors">
                       {initials}
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${scorePercent > 80 ? 'bg-emerald-100 text-emerald-700' : 'bg-leeds-cream text-leeds-blue'
-                      }`}>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        scorePercent > 80
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-leeds-cream text-leeds-blue"
+                      }`}
+                    >
                       {scorePercent}% Match
                     </span>
                   </div>
@@ -160,17 +209,14 @@ export default function MatchesPage() {
                   <button
                     type="button"
                     onClick={() => handleRequestHelp(match.id)}
-                    disabled={isRequested || isRequesting}
-                    className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 ${isRequested
+                    disabled={disabled}
+                    className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 ${
+                      disabled
                         ? "bg-gray-100 text-gray-500 cursor-default"
                         : "bg-leeds-blue text-white shadow-md hover:bg-leeds-teal hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
-                      }`}
+                    }`}
                   >
-                    {isRequested
-                      ? "Request Sent"
-                      : isRequesting
-                        ? "Sending..."
-                        : "Connect"}
+                    {stateToLabel(state, isRequesting)}
                   </button>
                 </div>
               </div>

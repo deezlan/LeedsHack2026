@@ -1,9 +1,9 @@
 ﻿import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import "./globals.css";
-import { Navbar } from "@/components/Navbar";
-import { Footer } from "@/components/Footer";
-import { AuthProvider } from "@/components/AuthProvider";
+import { Navbar } from "@/src/components/Navbar";
+import { Footer } from "@/src/components/Footer";
+import { AuthProvider } from "@/src/components/AuthProvider";
 
 const outfit = Outfit({
   variable: "--font-outfit",

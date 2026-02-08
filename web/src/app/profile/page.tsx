@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AllowedTags, type AllowedTag } from "../../../lib/tags";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { useRequireAuth } from "@/src/hooks/useRequireAuth";
 
 const STORAGE_KEY = "leedsHack.profile";
 const PROFILE_UPDATED_EVENT = "leedsHack.profile.updated";
