@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRequest } from "../../../../lib/api";
 import { AllowedTags, type AllowedTag } from "../../../../lib/tags";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-
+import VoiceLoop from "@/components/VoiceLoop";
 type RequestFormat = "chat" | "call" | "async";
 type RequestUrgency = "low" | "medium" | "high";
 
@@ -125,6 +125,54 @@ const clearDescription = (setDraftState: React.Dispatch<React.SetStateAction<Req
   });
 };
 
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  0: { transcript: string };
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+};
+
+type SpeechRecognitionErrorEventLike = {
+  error?: string;
+};
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
+
+type SpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructorLike;
+  webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+};
+
+const getSpeechErrorMessage = (errorCode?: string) => {
+  switch (errorCode) {
+    case "not-allowed":
+    case "service-not-allowed":
+      return "Microphone permission was denied. Please allow access and try again.";
+    case "audio-capture":
+      return "No microphone was detected. Please connect one and try again.";
+    case "no-speech":
+      return "No speech detected. Please try speaking more clearly.";
+    case "network":
+      return "Speech recognition connection failed. Please try again.";
+    default:
+      return "Speech input stopped due to an error. Please try again.";
+  }
+};
+
 export default function NewRequestPage() {
   const session = useRequireAuth();
   const router = useRouter();
@@ -132,6 +180,20 @@ export default function NewRequestPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tagMessage, setTagMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [speechMessage, setSpeechMessage] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const speechBaseDescriptionRef = useRef("");
+  const finalTranscriptRef = useRef("");
+  const speechRecognitionCtor = useMemo<SpeechRecognitionConstructorLike | null>(
+    () => {
+      if (typeof window === "undefined") return null;
+      const speechWindow = window as SpeechWindow;
+      return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+    },
+    []
+  );
+  const isSpeechSupported = speechRecognitionCtor !== null;
 
   useEffect(() => {
     if (!tagMessage) return;
@@ -144,6 +206,69 @@ export default function NewRequestPage() {
     const timer = window.setTimeout(() => setErrorMessage(null), 2800);
     return () => window.clearTimeout(timer);
   }, [errorMessage]);
+
+  useEffect(() => {
+    if (!speechMessage) return;
+    const timer = window.setTimeout(() => setSpeechMessage(null), 2800);
+    return () => window.clearTimeout(timer);
+  }, [speechMessage]);
+
+  useEffect(() => {
+    if (!speechRecognitionCtor) return;
+
+    const recognition = new speechRecognitionCtor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-GB";
+
+    recognition.onresult = (event) => {
+      let interimTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const transcript = result[0]?.transcript ?? "";
+
+        if (result.isFinal) {
+          finalTranscriptRef.current = `${finalTranscriptRef.current}${transcript}`;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      const combinedTranscript = `${finalTranscriptRef.current}${interimTranscript}`.trim();
+      if (!combinedTranscript) return;
+
+      setDraft((prev) => {
+        const base = speechBaseDescriptionRef.current.trimEnd();
+        const nextDescription = base ? `${base} ${combinedTranscript}` : combinedTranscript;
+
+        if (prev.description === nextDescription) {
+          return prev;
+        }
+
+        return { ...prev, description: nextDescription };
+      });
+    };
+
+    recognition.onerror = (event) => {
+      setIsListening(false);
+      setSpeechMessage(getSpeechErrorMessage(event.error));
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.stop();
+      recognitionRef.current = null;
+    };
+  }, [speechRecognitionCtor]);
 
   const tagSet = useMemo(() => new Set(draft.tags), [draft.tags]);
 
@@ -179,9 +304,42 @@ export default function NewRequestPage() {
     clearDescription(setDraft);
   };
 
+  const handleMicToggle = () => {
+    if (!isSpeechSupported) {
+      setSpeechMessage("Speech input not supported in this browser.");
+      return;
+    }
+
+    const recognition = recognitionRef.current;
+    if (!recognition) {
+      setSpeechMessage("Speech input is unavailable right now.");
+      return;
+    }
+
+    if (isListening) {
+      recognition.stop();
+      setIsListening(false);
+      return;
+    }
+
+    speechBaseDescriptionRef.current = draft.description;
+    finalTranscriptRef.current = "";
+    setSpeechMessage(null);
+
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch {
+      setIsListening(false);
+      setSpeechMessage("Unable to start microphone. Check your browser microphone access.");
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorMessage(null);
+    recognitionRef.current?.stop();
+    setIsListening(false);
 
     if (!draft.description.trim()) {
       setErrorMessage("Add a short description to continue.");
@@ -268,12 +426,30 @@ export default function NewRequestPage() {
                       onChange={(e) => setDraft(prev => ({ ...prev, description: e.target.value }))}
                       placeholder="I'm looking for help with..."
                       rows={6}
-                      className="w-full resize-none rounded-2xl border-2 border-transparent bg-white shadow-inner px-6 py-5 text-lg text-leeds-blue-dark placeholder:text-gray-300 focus:border-leeds-teal focus:ring-4 focus:ring-leeds-teal/10 transition-all outline-none"
+                      className="w-full resize-none rounded-2xl border-2 border-transparent bg-white shadow-inner px-6 py-5 pr-16 text-lg text-leeds-blue-dark placeholder:text-gray-300 focus:border-leeds-teal focus:ring-4 focus:ring-leeds-teal/10 transition-all outline-none"
                     />
+                    <div className="w-full"><VoiceLoop /></div>
                     {/* Corner accent */}
                     <div className="absolute bottom-4 right-4 text-gray-300 text-[10px] pointer-events-none opacity-0 group-focus-within/input:opacity-100 transition-opacity">
                       Markdown supported
                     </div>
+                  </div>
+                  <div className="min-h-[1.25rem]" aria-live="polite">
+                    {isListening && (
+                      <p className="text-sm text-leeds-teal font-semibold">
+                        Listening...
+                      </p>
+                    )}
+                    {!isSpeechSupported && (
+                      <p className="text-xs text-gray-500">
+                        Speech input not supported
+                      </p>
+                    )}
+                    {speechMessage && (
+                      <p className="text-xs text-red-500">
+                        {speechMessage}
+                      </p>
+                    )}
                   </div>
 
                   {/* Quick Prompts */}
