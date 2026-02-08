@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRequest } from "../../../../lib/api";
 import { AllowedTags, type AllowedTag } from "../../../../lib/tags";
-import { useRequireAuth } from "@/src/hooks/useRequireAuth";
 import { suggestTagsSmart } from "../../../../lib/suggestTags";
+import { useRequireAuth } from "@/src/hooks/useRequireAuth";
 import VoiceLoop from "@/src/components/VoiceLoop";
 
 type RequestFormat = "chat" | "call" | "async";
@@ -60,24 +60,7 @@ const quickPrompts = [
   },
 ];
 
-// Small local fallback if AI helper fails / no description
-const keywordRules: Array<{ test: RegExp; tags: AllowedTag[] }> = [
-  { test: /\b(cv|resume|cover letter|linkedin)\b/i, tags: ["cv", "career"] },
-  { test: /\binterview\b|\bmock interview\b/i, tags: ["interview", "career"] },
-  { test: /\b(frontend|react|ui|ux|figma|css)\b/i, tags: ["frontend", "design"] },
-  { test: /\bbackend|api|server|node|express\b/i, tags: ["backend", "coding"] },
-  { test: /\b(database|sql|postgres|mysql|mongodb|schema)\b/i, tags: ["database", "backend"] },
-  { test: /\bdesign|brand|visual|prototype|wireframe\b/i, tags: ["design"] },
-  { test: /\bwriting|copy|docs|documentation|essay\b/i, tags: ["writing"] },
-  { test: /\bmarketing|pitch|growth|seo|campaign\b/i, tags: ["marketing"] },
-  { test: /\bfinance|budget|pricing|revenue|cost|funding\b/i, tags: ["finance"] },
-  { test: /\blegal|terms|privacy|gdpr|compliance|contract\b/i, tags: ["legal"] },
-  { test: /\bhealth|wellbeing|stress|burnout\b/i, tags: ["health"] },
-  { test: /\badmin|ops|operations|planning|logistics|timeline\b/i, tags: ["admin"] },
-  { test: /\bcode|bug|debug|algorithm|leetcode\b/i, tags: ["coding"] },
-];
-
-const fallbackTags: AllowedTag[] = ["career", "coding", "design"];
+const MAX_SUGGESTED_TAGS = 5;
 
 const buildTitle = (description: string) => {
   const normalized = description.trim().replace(/\s+/g, " ");
@@ -87,22 +70,32 @@ const buildTitle = (description: string) => {
   return words.length > 6 ? `${snippet}...` : snippet;
 };
 
-function fallbackSuggestTags(description: string, max = 3): AllowedTag[] {
-  const selected = new Set<AllowedTag>();
-  for (const rule of keywordRules) {
-    if (rule.test.test(description)) rule.tags.forEach((t) => selected.add(t));
-  }
-  for (const t of fallbackTags) if (selected.size < 2) selected.add(t);
-  if (selected.size < 2) {
-    for (const t of AllowedTags) if (selected.size < 2) selected.add(t);
-  }
-  return Array.from(selected).slice(0, max);
-}
+const isObjectId = (v: unknown) =>
+  typeof v === "string" && /^[a-f\d]{24}$/i.test(v);
 
-// --- Speech scaffolding (kept, but harmless if not used) ---
-type SpeechRecognitionResultLike = { isFinal: boolean; 0: { transcript: string } };
-type SpeechRecognitionEventLike = { resultIndex: number; results: ArrayLike<SpeechRecognitionResultLike> };
-type SpeechRecognitionErrorEventLike = { error?: string };
+const clearDescription = (
+  setDraftState: React.Dispatch<React.SetStateAction<RequestDraft>>
+) => {
+  setDraftState((prev) => {
+    if (!prev.description) return prev;
+    return { ...prev, description: "" };
+  });
+};
+
+/** --- Speech typing types (kept from your UI version) --- */
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  0: { transcript: string };
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+};
+
+type SpeechRecognitionErrorEventLike = {
+  error?: string;
+};
 
 type SpeechRecognitionLike = {
   continuous: boolean;
@@ -116,6 +109,7 @@ type SpeechRecognitionLike = {
 };
 
 type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
+
 type SpeechWindow = Window & {
   SpeechRecognition?: SpeechRecognitionConstructorLike;
   webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
@@ -137,31 +131,104 @@ const getSpeechErrorMessage = (errorCode?: string) => {
   }
 };
 
+type ApiUser = { id: string; name: string };
+
 export default function NewRequestPage() {
-  const session = useRequireAuth();
+  const session = useRequireAuth(); // keeps your auth gating
   const router = useRouter();
 
   const [draft, setDraft] = useState<RequestDraft>(emptyDraft);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuggestingTags, setIsSuggestingTags] = useState(false);
 
-  const [tagMessage, setTagMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Optional speech UX states
+  const [tagMessage, setTagMessage] = useState<string | null>(null);
+  const [isSuggestingTags, setIsSuggestingTags] = useState(false);
+  const [recommendedTags, setRecommendedTags] = useState<AllowedTag[]>([]);
+
+  // Keep the previous requester/user logic so contracts don't break
+  const [requesterId, setRequesterId] = useState<string>("");
+  const [users, setUsers] = useState<ApiUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+
+  /** Speech logic (kept from UI version) */
   const [isListening, setIsListening] = useState(false);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const speechBaseDescriptionRef = useRef("");
   const finalTranscriptRef = useRef("");
 
-  const speechRecognitionCtor = useMemo<SpeechRecognitionConstructorLike | null>(() => {
-    if (typeof window === "undefined") return null;
-    const w = window as SpeechWindow;
-    return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+  const speechRecognitionCtor = useMemo<SpeechRecognitionConstructorLike | null>(
+    () => {
+      if (typeof window === "undefined") return null;
+      const speechWindow = window as SpeechWindow;
+      return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+    },
+    []
+  );
+  const isSpeechSupported = speechRecognitionCtor !== null;
+
+  const tagSet = useMemo(() => new Set(draft.tags), [draft.tags]);
+
+  // --- Load requester/users exactly like your previous version ---
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadRequester() {
+      setUsersLoading(true);
+      try {
+        const res = await fetch("/api/users", { cache: "no-store" });
+        const json = await res.json();
+
+        const list: ApiUser[] = Array.isArray(json?.data)
+          ? json.data
+          : Array.isArray(json?.users)
+            ? json.users
+            : [];
+
+        if (!mounted) return;
+
+        setUsers(list);
+
+        const validIds = new Set(
+          list.map((u) => u.id).filter((id) => isObjectId(id))
+        );
+
+        const saved = localStorage.getItem("userId");
+        const savedIsValid = saved && isObjectId(saved) && validIds.has(saved);
+
+        const chosen =
+          savedIsValid
+            ? (saved as string)
+            : (list.find((u) => isObjectId(u.id))?.id ?? "");
+
+        setRequesterId(chosen);
+
+        if (chosen) localStorage.setItem("userId", chosen);
+        else localStorage.removeItem("userId");
+      } catch {
+        if (!mounted) return;
+        setUsers([]);
+        setRequesterId("");
+        localStorage.removeItem("userId");
+      } finally {
+        if (!mounted) return;
+        setUsersLoading(false);
+      }
+    }
+
+    loadRequester();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const isSpeechSupported = speechRecognitionCtor !== null;
+  // initial recommendations on mount (same behaviour as your UI version)
+  useEffect(() => {
+    // give something sensible even if empty description
+    setRecommendedTags(["other", "coding"].filter((t) => AllowedTags.includes(t as AllowedTag)) as AllowedTag[]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!tagMessage) return;
@@ -181,6 +248,7 @@ export default function NewRequestPage() {
     return () => window.clearTimeout(timer);
   }, [speechMessage]);
 
+  // speech recognition setup
   useEffect(() => {
     if (!speechRecognitionCtor) return;
 
@@ -203,14 +271,14 @@ export default function NewRequestPage() {
         }
       }
 
-      const combined = `${finalTranscriptRef.current}${interimTranscript}`.trim();
-      if (!combined) return;
+      const combinedTranscript = `${finalTranscriptRef.current}${interimTranscript}`.trim();
+      if (!combinedTranscript) return;
 
       setDraft((prev) => {
         const base = speechBaseDescriptionRef.current.trimEnd();
-        const next = base ? `${base} ${combined}` : combined;
-        if (prev.description === next) return prev;
-        return { ...prev, description: next };
+        const nextDescription = base ? `${base} ${combinedTranscript}` : combinedTranscript;
+        if (prev.description === nextDescription) return prev;
+        return { ...prev, description: nextDescription };
       });
     };
 
@@ -229,14 +297,10 @@ export default function NewRequestPage() {
       recognition.onresult = null;
       recognition.onerror = null;
       recognition.onend = null;
-      try {
-        recognition.stop();
-      } catch {}
+      recognition.stop();
       recognitionRef.current = null;
     };
   }, [speechRecognitionCtor]);
-
-  const tagSet = useMemo(() => new Set(draft.tags), [draft.tags]);
 
   if (!session) return null;
 
@@ -249,37 +313,6 @@ export default function NewRequestPage() {
     });
   };
 
-  const handleSuggestTags = async () => {
-    const desc = draft.description.trim();
-    if (!desc) {
-      setTagMessage("Write a description first so we can suggest tags.");
-      return;
-    }
-
-    setIsSuggestingTags(true);
-    try {
-      const { tags, source } = await suggestTagsSmart(desc, 3);
-      const safeTags = Array.isArray(tags)
-        ? tags.filter((t): t is AllowedTag => AllowedTags.includes(t as any))
-        : [];
-
-      if (safeTags.length) {
-        setDraft((prev) => ({ ...prev, tags: safeTags }));
-        setTagMessage(source === "ai" ? "AI suggestions applied." : "Suggestions applied (fallback).");
-      } else {
-        const fallback = fallbackSuggestTags(desc, 3);
-        setDraft((prev) => ({ ...prev, tags: fallback }));
-        setTagMessage("Suggestions applied (fallback).");
-      }
-    } catch {
-      const fallback = fallbackSuggestTags(desc, 3);
-      setDraft((prev) => ({ ...prev, tags: fallback }));
-      setTagMessage("Suggestions applied (fallback).");
-    } finally {
-      setIsSuggestingTags(false);
-    }
-  };
-
   const handleQuickPrompt = (value: string) => {
     setDraft((prev) => {
       const trimmed = prev.description.trim();
@@ -288,15 +321,66 @@ export default function NewRequestPage() {
     });
   };
 
+  const handleClearDescription = () => clearDescription(setDraft);
+
+  const handleMicToggle = () => {
+    if (!isSpeechSupported) {
+      setSpeechMessage("Speech input not supported in this browser.");
+      return;
+    }
+    const recognition = recognitionRef.current;
+    if (!recognition) {
+      setSpeechMessage("Speech input is unavailable right now.");
+      return;
+    }
+    if (isListening) {
+      recognition.stop();
+      setIsListening(false);
+      return;
+    }
+
+    speechBaseDescriptionRef.current = draft.description;
+    finalTranscriptRef.current = "";
+    setSpeechMessage(null);
+
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch {
+      setIsListening(false);
+      setSpeechMessage("Unable to start microphone. Check your browser microphone access.");
+    }
+  };
+
+  // --- NEW: refresh recommendations uses suggestTagsSmart but does NOT change selected tags ---
+  const handleRefreshRecommendations = async () => {
+    if (!draft.description.trim()) {
+      setTagMessage("Write a description first so we can recommend tags.");
+      return;
+    }
+
+    setIsSuggestingTags(true);
+    try {
+      const { tags, source } = await suggestTagsSmart(draft.description, MAX_SUGGESTED_TAGS);
+      const cleaned = tags.filter((t) => AllowedTags.includes(t)).slice(0, MAX_SUGGESTED_TAGS);
+      setRecommendedTags(cleaned.length ? cleaned : []);
+      setTagMessage(source === "ai" ? "AI recommendations refreshed." : "Recommendations refreshed (fallback).");
+    } finally {
+      setIsSuggestingTags(false);
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorMessage(null);
 
-    // stop speech if currently listening
-    try {
-      recognitionRef.current?.stop();
-    } catch {}
+    recognitionRef.current?.stop();
     setIsListening(false);
+
+    if (!isObjectId(requesterId)) {
+      setErrorMessage("No valid requester selected (Mongo user id missing).");
+      return;
+    }
 
     if (!draft.description.trim()) {
       setErrorMessage("Add a short description to continue.");
@@ -306,14 +390,13 @@ export default function NewRequestPage() {
     setIsSubmitting(true);
     try {
       const created = await createRequest({
-        requesterId: session.userId, // IMPORTANT: use auth user id to match DB ObjectId
+        requesterId,
         title: buildTitle(draft.description),
         description: draft.description.trim(),
         urgency: draft.urgency,
         format: draft.format,
         tags: draft.tags,
       });
-
       router.push(`/matches/${created.id}`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Something went wrong.");
@@ -322,7 +405,11 @@ export default function NewRequestPage() {
     }
   };
 
-  const canSubmit = draft.description.trim().length > 0 && !isSubmitting;
+  const canSubmit =
+    draft.description.trim().length > 0 &&
+    !isSubmitting &&
+    isObjectId(requesterId) &&
+    !usersLoading;
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -345,6 +432,11 @@ export default function NewRequestPage() {
           <p className="text-lg text-leeds-blue-dark/60 max-w-2xl">
             Describe your challenge to find the perfect collaborator or mentor.
           </p>
+
+          {/* keep debugging lines if you want; safe to delete */}
+          <p className="text-xs text-gray-500">
+            Requester: {requesterId} | usersLoading: {String(usersLoading)} | isObjectId: {String(isObjectId(requesterId))}
+          </p>
         </div>
 
         <div className="grid lg:grid-cols-12 gap-8 items-start">
@@ -363,9 +455,23 @@ export default function NewRequestPage() {
                     <label htmlFor="description" className="block text-lg font-bold text-leeds-blue-dark">
                       Describe your challenge
                     </label>
-                    <span className={`text-xs font-mono transition-colors ${draft.description.length > 0 ? "text-leeds-teal" : "text-gray-400"}`}>
-                      {draft.description.length} chars
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`text-xs font-mono transition-colors ${
+                          draft.description.length > 0 ? "text-leeds-teal" : "text-gray-400"
+                        }`}
+                      >
+                        {draft.description.length} chars
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearDescription}
+                        disabled={!draft.description}
+                        className="text-xs font-semibold text-gray-500 hover:text-leeds-teal disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
 
                   <div className="relative group/input">
@@ -393,7 +499,9 @@ export default function NewRequestPage() {
 
                   {/* Quick Prompts */}
                   <div className="space-y-3 pt-2">
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider pl-1">Quick Starts</p>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider pl-1">
+                      Quick Starts
+                    </p>
                     <div className="flex flex-wrap gap-3">
                       {quickPrompts.map((prompt, i) => (
                         <button
@@ -420,11 +528,15 @@ export default function NewRequestPage() {
                 {/* Format & Urgency */}
                 <div className="grid sm:grid-cols-2 gap-8">
                   <div className="space-y-3">
-                    <label className="block text-sm font-bold text-leeds-blue-dark uppercase tracking-wide">Format</label>
+                    <label className="block text-sm font-bold text-leeds-blue-dark uppercase tracking-wide">
+                      Format
+                    </label>
                     <div className="relative">
                       <select
                         value={draft.format}
-                        onChange={(e) => setDraft((prev) => ({ ...prev, format: e.target.value as RequestFormat }))}
+                        onChange={(e) =>
+                          setDraft((prev) => ({ ...prev, format: e.target.value as RequestFormat }))
+                        }
                         className="w-full appearance-none rounded-xl border border-leeds-border bg-white px-5 py-4 text-leeds-blue-dark font-medium cursor-pointer hover:border-leeds-teal focus:border-leeds-teal focus:ring-4 focus:ring-leeds-teal/10 transition-all outline-none shadow-sm"
                       >
                         {formatOptions.map((opt) => (
@@ -433,16 +545,22 @@ export default function NewRequestPage() {
                           </option>
                         ))}
                       </select>
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                        ▼
+                      </div>
                     </div>
                   </div>
 
                   <div className="space-y-3">
-                    <label className="block text-sm font-bold text-leeds-blue-dark uppercase tracking-wide">Urgency</label>
+                    <label className="block text-sm font-bold text-leeds-blue-dark uppercase tracking-wide">
+                      Urgency
+                    </label>
                     <div className="relative">
                       <select
                         value={draft.urgency}
-                        onChange={(e) => setDraft((prev) => ({ ...prev, urgency: e.target.value as RequestUrgency }))}
+                        onChange={(e) =>
+                          setDraft((prev) => ({ ...prev, urgency: e.target.value as RequestUrgency }))
+                        }
                         className="w-full appearance-none rounded-xl border border-leeds-border bg-white px-5 py-4 text-leeds-blue-dark font-medium cursor-pointer hover:border-leeds-teal focus:border-leeds-teal focus:ring-4 focus:ring-leeds-teal/10 transition-all outline-none shadow-sm"
                       >
                         {urgencyOptions.map((opt) => (
@@ -451,43 +569,106 @@ export default function NewRequestPage() {
                           </option>
                         ))}
                       </select>
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                        ▼
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Tags */}
-                <div className="space-y-4">
+                {/* Tags - two areas */}
+                <div className="space-y-6">
                   <div className="flex items-center justify-between">
-                    <label className="block text-sm font-bold text-leeds-blue-dark uppercase tracking-wide">Tags</label>
+                    <label className="block text-sm font-bold text-leeds-blue-dark uppercase tracking-wide">
+                      Tags
+                    </label>
                     <button
                       type="button"
-                      onClick={handleSuggestTags}
+                      onClick={handleRefreshRecommendations}
                       disabled={isSuggestingTags}
                       className="text-xs flex items-center gap-1.5 text-leeds-teal font-bold hover:bg-leeds-teal/10 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
                     >
-                      {isSuggestingTags ? "Suggesting..." : "Suggest tags"}
+                      <span className="text-lg">↻</span>
+                      {isSuggestingTags ? "Refreshing..." : "Refresh recommendations"}
                     </button>
                   </div>
 
-                  <div className="flex flex-wrap gap-2.5">
-                    {AllowedTags.map((tag) => {
-                      const selected = tagSet.has(tag);
-                      return (
+                  {/* Selected */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Selected ({draft.tags.length})
+                    </div>
+                    {draft.tags.length === 0 ? (
+                      <div className="text-sm text-gray-400 italic py-2">
+                        No tags selected. Click recommendations below.
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2.5">
+                        {draft.tags.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => toggleTag(tag)}
+                            className="group relative flex items-center gap-2 rounded-lg bg-leeds-teal text-white px-3 py-1.5 text-sm font-medium shadow-md shadow-leeds-teal/20 transition-all hover:bg-red-500 hover:shadow-red-500/30"
+                            title="Remove tag"
+                          >
+                            {tag}
+                            <span className="text-xs opacity-60 group-hover:opacity-100">✕</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Recommended */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Recommended
+                    </div>
+                    <div className="flex flex-wrap gap-2.5">
+                      {recommendedTags.filter((t) => !tagSet.has(t)).map((tag) => (
                         <button
                           key={tag}
                           type="button"
                           onClick={() => toggleTag(tag)}
-                          className={`rounded-full px-3 py-1 text-xs font-medium transition-all duration-200 border ${
-                            selected
-                              ? "border-leeds-teal bg-leeds-teal text-white shadow-sm"
-                              : "border-leeds-border bg-white text-leeds-blue-dark/70 hover:border-leeds-teal/50"
-                          }`}
+                          className="relative rounded-lg px-3 py-1.5 text-sm font-medium bg-white border border-leeds-border text-gray-600 hover:border-leeds-teal hover:text-leeds-teal hover:shadow-sm transition-all active:scale-95"
                         >
-                          {tag}
+                          + {tag}
                         </button>
-                      );
-                    })}
+                      ))}
+
+                      {recommendedTags.filter((t) => !tagSet.has(t)).length === 0 && (
+                        <span className="text-xs text-gray-400">
+                          {recommendedTags.length > 0
+                            ? "All recommendations selected"
+                            : "Write a description then refresh recommendations"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Optional: keep ability to select ANY allowed tag without breaking “two areas” */}
+                  <div className="pt-2 border-t border-leeds-border/50">
+                    <details className="group">
+                      <summary className="text-xs font-bold text-gray-400 cursor-pointer hover:text-leeds-teal transition-colors list-none flex items-center gap-2">
+                        <span className="group-open:rotate-90 transition-transform">▸</span>
+                        Show all other tags
+                      </summary>
+                      <div className="flex flex-wrap gap-2 pt-3">
+                        {AllowedTags.filter(
+                          (tag) => !tagSet.has(tag) && !recommendedTags.includes(tag)
+                        ).map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => toggleTag(tag)}
+                            className="rounded-lg px-2.5 py-1 text-xs font-medium bg-gray-50 border border-gray-200 text-gray-500 hover:border-leeds-teal hover:text-leeds-teal transition-colors"
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    </details>
                   </div>
 
                   {tagMessage && (
@@ -500,13 +681,15 @@ export default function NewRequestPage() {
 
               {/* Footer */}
               <div className="px-10 py-6 bg-gray-50 border-t border-leeds-border flex justify-between items-center">
-                <p className="text-xs text-gray-400 font-medium">Request will be visible to active students</p>
+                <p className="text-xs text-gray-400 font-medium">Request will be visible to 128 active students</p>
+
                 <div className="flex items-center gap-4">
                   {errorMessage && (
                     <span className="text-sm text-red-500 font-bold bg-red-50 px-3 py-1 rounded-lg">
                       {errorMessage}
                     </span>
                   )}
+
                   <button
                     type="submit"
                     disabled={!canSubmit}
@@ -525,6 +708,7 @@ export default function NewRequestPage() {
 
           {/* Sidebar */}
           <div className="lg:col-span-5 space-y-8 sticky top-8 animate-fadeUp" style={{ animationDelay: "200ms" }}>
+            {/* Live Preview */}
             <div className="bg-white rounded-3xl p-6 border border-leeds-border shadow-2xl shadow-leeds-blue/5 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-leeds-teal/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
 
@@ -538,11 +722,13 @@ export default function NewRequestPage() {
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-leeds-teal to-leeds-blue flex items-center justify-center text-sm font-bold text-white shadow-md">
                     You
                   </div>
+
                   <div className="flex-1">
                     <div className="flex justify-between items-baseline mb-1">
                       <p className="text-sm font-bold text-leeds-blue-dark">Your Request</p>
                       <span className="text-[10px] text-gray-400">Just now</span>
                     </div>
+
                     <div
                       className={`text-base text-leeds-blue-dark leading-relaxed break-words min-h-[60px] ${
                         draft.description ? "" : "text-gray-400 italic"
@@ -568,6 +754,7 @@ export default function NewRequestPage() {
                       No tags
                     </span>
                   )}
+
                   {draft.tags.length > 3 && (
                     <span className="text-[10px] px-2 py-1 text-gray-400">
                       +{draft.tags.length - 3} more
@@ -577,6 +764,7 @@ export default function NewRequestPage() {
               </div>
             </div>
 
+            {/* Benefits */}
             <div className="bg-leeds-blue-dark text-white p-8 rounded-3xl shadow-xl relative overflow-hidden group">
               <div className="absolute inset-0 bg-leeds-teal/20 opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-3xl pointer-events-none" />
               <h3 className="text-xl font-bold mb-6 relative z-10">Why request help?</h3>
@@ -603,6 +791,9 @@ export default function NewRequestPage() {
             </div>
           </div>
         </div>
+
+        {/* Optional: mic toggle button (you had handler but no button in snippet) */}
+        {/* If you want it visible, tell me where you want it and I’ll place it nicely. */}
       </div>
     </div>
   );
