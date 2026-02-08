@@ -1,46 +1,73 @@
 import { NextResponse } from "next/server";
-import { matchesCol } from "../../../../../lib/db_types";
-import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/db";
+
+// Optional Mongo path (only used if available + helperId is ObjectId)
+let matchesCol: undefined | (() => Promise<any>);
+let ObjectId: any;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  ({ matchesCol } = require("@/lib/db_types"));
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  ({ ObjectId } = require("mongodb"));
+} catch {
+  // running in seed-store mode; ignore
+}
+
+const INBOX_STATES = ["requested", "accepted", "declined"] as const;
 
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ helperId: string }> }
+  ctx: { params: Promise<{ helperId: string }> }
 ) {
   try {
-    const { helperId } = await params;
+    const { helperId } = await ctx.params;
 
-    if (!ObjectId.isValid(helperId)) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid helperId" },
-        { status: 400 }
-      );
+    // --- Mongo implementation (Dev B/D) ---
+    if (matchesCol && ObjectId?.isValid?.(helperId)) {
+      const col = await matchesCol();
+
+      const docs = await col
+        .find({
+          helperId: new ObjectId(helperId),
+          state: { $in: INBOX_STATES as any },
+        })
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .toArray();
+
+      // IMPORTANT: return { items } to match your lib/api.getInbox()
+      const items = docs.map((m: any) => ({
+        // your app expects Match.id as string
+        id: m.id?.toString?.() ?? m._id?.toString?.() ?? "",
+        requestId: m.requestId?.toString?.() ?? "",
+        requesterId: m.requesterId?.toString?.() ?? "",
+        helperId: m.helperId?.toString?.() ?? "",
+        score: m.score ?? 0,
+        reasons: Array.isArray(m.reasons) ? m.reasons : [],
+        state: m.state,
+        connectionPayload: m.connectionPayload,
+        createdAt: m.createdAt ?? new Date().toISOString(),
+        updatedAt: m.updatedAt ?? m.createdAt ?? new Date().toISOString(),
+      }));
+
+      return NextResponse.json({ items });
     }
 
-    const col = await matchesCol();
+    // --- Seed-store implementation (yours) ---
+    const db = await getDb();
+    const matches = await db.collection("matches").find({ helperId }).toArray();
 
-    const inbox = await col
-      .find({
-        helperId: new ObjectId(helperId),
-        state: "requested",
-      })
-      .sort({ createdAt: -1 })
-      .toArray();
+    const items = matches
+      .filter((m: any) => INBOX_STATES.includes(m.state))
+      .sort((a: any, b: any) =>
+        String(b.updatedAt ?? b.createdAt ?? "").localeCompare(
+          String(a.updatedAt ?? a.createdAt ?? "")
+        )
+      );
 
-    return NextResponse.json({
-      ok: true,
-      data: inbox.map((m) => ({
-        ...m,
-        _id: m._id?.toString(),
-        requestId: m.requestId.toString(),
-        requesterId: m.requesterId.toString(),
-        helperId: m.helperId.toString(),
-      })),
-    });
-  } catch (err) {
-    console.error("GET /api/inbox error:", err);
-
+    return NextResponse.json({ items });
+  } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: "Internal server error" },
+      { error: e?.message ?? "unknown error" },
       { status: 500 }
     );
   }

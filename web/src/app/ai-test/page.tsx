@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import SuggestTags from "@/components/ai/SuggestTags";
+import SuggestTags from "@/src/components/ai/SuggestTags";
 
 export default function AITestPage() {
   const [text, setText] = useState("");

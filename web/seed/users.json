@@ -1,5 +1,5 @@
 [
-  { "id": "u1", "name": "Aisha", "tags": ["frontend", "design"] },
-  { "id": "u2", "name": "Ben", "tags": ["backend", "database"] },
-  { "id": "u3", "name": "Chen", "tags": ["interview", "cv", "writing"] }
+  { "id": "u1", "name": "Aisha", "tags": ["frontend", "design", "cv"], "createdAt": "2026-02-07T00:00:00.000Z", "updatedAt": "2026-02-07T00:00:00.000Z" },
+  { "id": "u2", "name": "Ben", "tags": ["backend", "database", "coding"], "createdAt": "2026-02-07T00:00:00.000Z", "updatedAt": "2026-02-07T00:00:00.000Z" },
+  { "id": "u3", "name": "Chen", "tags": ["interview", "cv", "writing"], "createdAt": "2026-02-07T00:00:00.000Z", "updatedAt": "2026-02-07T00:00:00.000Z" }
 ]
