@@ -8,7 +8,7 @@ export function Footer() {
                     <div className="md:col-span-2">
                         <Link href="/" className="inline-block">
                             <span className="text-xl font-bold tracking-tight text-white">
-                                Leeds<span className="text-leeds-teal">Hack</span> 2026
+                                Campus<span className="text-leeds-teal">Connect</span>
                             </span>
                         </Link>
                         <p className="mt-4 text-sm text-white/70 max-w-sm">
@@ -38,7 +38,7 @@ export function Footer() {
 
                 <div className="mt-12 pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
                     <p className="text-xs text-white/50">
-                        &copy; 2026 LeedsHack. All rights reserved.
+                        &copy; 2026 CampusConnect. All rights reserved.
                     </p>
                     <div className="flex gap-4">
                         {/* Social Icons Placeholder */}

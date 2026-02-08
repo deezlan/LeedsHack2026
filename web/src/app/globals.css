@@ -3,19 +3,26 @@
 @tailwind utilities;
 
 :root {
+  /* Richer, more vibrant Leeds palette */
   --leeds-teal: 0 208 160;
-  --leeds-teal-dark: 0 168 129;
-  --leeds-blue: 0 58 82;
-  --leeds-blue-dark: 0 50 61;
+  /* Keep vibrant teal */
+  --leeds-teal-light: 100 240 210;
+  /* New highlight shade */
+  --leeds-blue: 10 35 60;
+  /* Deeper, rich navy */
+  --leeds-blue-dark: 5 20 40;
+  /* Almost black-blue */
   --leeds-bright: 26 132 199;
-  --leeds-cream: 255 251 245;
+  --leeds-cream: 248 245 242;
+  /* Slightly cooler cream for clay look */
   --leeds-surface: 255 255 255;
-  --leeds-border: 229 229 229;
+  --leeds-border: 220 220 230;
+  /* Blue-tinted border */
 
   --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 
   --color-background: rgb(var(--leeds-cream));
-  --color-foreground: #212529;
+  --color-foreground: #1a1a1a;
 }
 
 /* Custom Utilities */
@@ -65,4 +72,127 @@ body {
 
 .animate-fadeUp {
   animation: fadeUp 0.5s ease-out forwards;
+}
+
+/* Glowing Text Utilities */
+.text-glow {
+  text-shadow: 0 0 20px rgba(var(--leeds-teal), 0.5),
+    0 0 40px rgba(var(--leeds-teal), 0.3);
+}
+
+.text-glow-sm {
+  text-shadow: 0 0 10px rgba(var(--leeds-teal), 0.4);
+}
+
+/* Animations */
+@keyframes shimmer {
+  0% {
+    background-position: 200% center;
+  }
+
+  100% {
+    background-position: -200% center;
+  }
+}
+
+.animate-shimmer {
+  background-size: 200% auto;
+  animation: shimmer 4s linear infinite;
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(var(--leeds-teal), 0.5));
+  }
+
+  50% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 15px rgba(var(--leeds-teal), 0.8));
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: floatSlow 6s ease-in-out infinite;
+}
+
+@keyframes scroll-vertical {
+  0% {
+    transform: translateY(0);
+  }
+
+  100% {
+    transform: translateY(-50%);
+  }
+}
+
+.animate-scroll-vertical {
+  animation: scroll-vertical 20s linear infinite;
+}
+
+.animate-scroll-vertical:hover {
+  animation-play-state: paused;
+}
+
+/* Advanced Animations */
+@keyframes blob-bounce {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+.animate-blob {
+  animation: blob-bounce 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+/* Spotlight Effect Utilities */
+.spotlight-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.spotlight-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(800px circle at var(--mouse-x) var(--mouse-y),
+      rgba(255, 255, 255, 0.06),
+      transparent 40%);
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.5s;
+  pointer-events: none;
+}
+
+.spotlight-card:hover::before {
+  opacity: 1;
 }

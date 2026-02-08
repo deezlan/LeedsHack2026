@@ -1,25 +1,41 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useRequireAuth } from "@/src/hooks/useRequireAuth";
 import { getMatch, getMessages, sendMessage } from "../../../../lib/api";
 import type { ConnectionMessage } from "../../../../lib/types";
 import type { MatchCard } from "../../../../lib/mock";
 
 export default function ConnectionPage() {
+  const session = useRequireAuth();
+  const router = useRouter();
+
   const params = useParams<{ matchId: string }>();
   const matchIdParam = params?.matchId ?? "";
   const matchId = Array.isArray(matchIdParam) ? matchIdParam[0] : matchIdParam;
-  const CURRENT_USER_ID = "u2"; // your helperId for now
-  const CURRENT_ROLE: "helper" | "requester" = "helper";
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const [message, setMessage] = useState("");
   const [match, setMatch] = useState<MatchCard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConnectionMessage[]>([]);
+  const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // If auth is still loading or redirecting
+  if (!session) return null;
+
+  // Derive current user context from session (best-effort)
+  const CURRENT_USER_ID = session.userId;
+
+  // If your session includes role, use it; otherwise default.
+  // You can improve this later by deriving role from match (helperId vs requesterId)
+  const CURRENT_ROLE: "helper" | "requester" =
+    (session as any).role === "requester" || (session as any).role === "helper"
+      ? (session as any).role
+      : "requester";
 
   useEffect(() => {
     if (!matchId) {
@@ -48,7 +64,9 @@ export default function ConnectionPage() {
       })
       .catch((e) => {
         if (!isMounted) return;
-        setErrorMessage(e instanceof Error ? e.message : "Failed to load connection.");
+        setErrorMessage(
+          e instanceof Error ? e.message : "Failed to load connection."
+        );
       })
       .finally(() => {
         if (!isMounted) return;
@@ -61,11 +79,10 @@ export default function ConnectionPage() {
   }, [matchId]);
 
   useEffect(() => {
-    // call whenever messages changes
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages.length]); // or [messages]
+  }, [messages.length]);
 
   const initials = useMemo(() => {
     if (!match?.helperName) return "?";
@@ -105,7 +122,6 @@ export default function ConnectionPage() {
         text,
       });
 
-      // update UI immediately
       setMessages((prev) => [...prev, created]);
       setMessage("");
     } catch (e) {
@@ -135,17 +151,25 @@ export default function ConnectionPage() {
               </p>
             </div>
           </div>
+
           {match?.state && (
-            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${stateBadge}`}>
+            <span
+              className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${stateBadge}`}
+            >
               {match.state}
             </span>
           )}
         </div>
 
-        {/* Chat Messages Placeholder */}
-        <div ref={scrollRef} className="flex-1 p-6 bg-leeds-cream/20 overflow-y-auto space-y-6">
+        {/* Messages */}
+        <div
+          ref={scrollRef}
+          className="flex-1 p-6 bg-leeds-cream/20 overflow-y-auto space-y-6"
+        >
           {loading ? (
-            <div className="h-full flex items-center justify-center text-sm text-gray-500">Loading connection…</div>
+            <div className="h-full flex items-center justify-center text-sm text-gray-500">
+              Loading connection…
+            </div>
           ) : errorMessage ? (
             <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-700">
               <p className="font-semibold">Couldn’t load this connection</p>
@@ -162,48 +186,53 @@ export default function ConnectionPage() {
                 {match?.state === "declined" && " The helper declined this request."}
               </p>
             </div>
+          ) : messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-60">
+              <div className="w-16 h-16 bg-leeds-blue/5 rounded-full flex items-center justify-center text-2xl">
+                👋
+              </div>
+              <p className="text-sm text-gray-500 max-w-xs">
+                This is the start of your conversation with{" "}
+                <span className="font-semibold text-leeds-blue-dark">
+                  {match?.helperName}
+                </span>
+                . Say hello and share your request details!
+              </p>
+            </div>
           ) : (
-            <>
-              {messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-60">
-                  <div className="w-16 h-16 bg-leeds-blue/5 rounded-full flex items-center justify-center text-2xl">
-                    👋
-                  </div>
-                  <p className="text-sm text-gray-500 max-w-xs">
-                    This is the start of your conversation with{" "}
-                    <span className="font-semibold text-leeds-blue-dark">{match?.helperName}</span>.
-                    Say hello and share your request details!
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {messages.map((m) => {
-                    const isMine = m.senderId === CURRENT_USER_ID;
+            <div className="space-y-3">
+              {messages.map((m) => {
+                const isMine = m.senderId === CURRENT_USER_ID;
 
-                    return (
-                      <div key={m.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-                        <div
-                          className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm ${
-                            isMine
-                              ? "bg-leeds-blue text-white"
-                              : "bg-white border border-leeds-border text-leeds-blue-dark"
-                          }`}
-                        >
-                          <div className="whitespace-pre-wrap break-words">{m.text}</div>
-                          <div className={`mt-1 text-[10px] opacity-70 ${isMine ? "text-white/70" : "text-gray-400"}`}>
-                            {new Date(m.createdAt).toLocaleString()}
-                          </div>
-                        </div>
+                return (
+                  <div
+                    key={m.id}
+                    className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm ${
+                        isMine
+                          ? "bg-leeds-blue text-white"
+                          : "bg-white border border-leeds-border text-leeds-blue-dark"
+                      }`}
+                    >
+                      <div className="whitespace-pre-wrap break-words">{m.text}</div>
+                      <div
+                        className={`mt-1 text-[10px] opacity-70 ${
+                          isMine ? "text-white/70" : "text-gray-400"
+                        }`}
+                      >
+                        {new Date(m.createdAt).toLocaleString()}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
-        {/* Input Area */}
+        {/* Input */}
         <div className="p-4 bg-white border-t border-leeds-border">
           <form
             className="flex gap-2"
@@ -216,7 +245,11 @@ export default function ConnectionPage() {
               type="text"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder={match?.state === "accepted" ? "Type a message..." : "Connection not active yet"}
+              placeholder={
+                match?.state === "accepted"
+                  ? "Type a message..."
+                  : "Connection not active yet"
+              }
               disabled={match?.state !== "accepted"}
               className="flex-1 rounded-full border border-leeds-border bg-gray-50 px-4 py-2.5 text-sm focus:border-leeds-teal focus:ring-2 focus:ring-leeds-teal/20 outline-none transition-all disabled:opacity-60"
             />
@@ -231,23 +264,34 @@ export default function ConnectionPage() {
         </div>
       </div>
 
-      {/* Sidebar Info */}
+      {/* Sidebar */}
       <div className="w-full lg:w-80 flex flex-col gap-4">
         <div className="bg-white rounded-2xl border border-leeds-border p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-leeds-blue-dark mb-4">Match Details</h3>
+          <h3 className="text-sm font-bold text-leeds-blue-dark mb-4">
+            Match Details
+          </h3>
 
           {match ? (
             <div className="space-y-4">
               <div className="flex justify-between items-center p-3 bg-leeds-cream rounded-xl">
-                <span className="text-xs font-semibold text-gray-500">Compatibility</span>
-                <span className="text-lg font-bold text-leeds-teal">{scorePercent}%</span>
+                <span className="text-xs font-semibold text-gray-500">
+                  Compatibility
+                </span>
+                <span className="text-lg font-bold text-leeds-teal">
+                  {scorePercent}%
+                </span>
               </div>
 
               <div>
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Why you matched</h4>
+                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  Why you matched
+                </h4>
                 <ul className="space-y-2">
                   {match.reasons.map((reason, i) => (
-                    <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                    <li
+                      key={i}
+                      className="text-xs text-gray-600 flex items-start gap-2"
+                    >
                       <span className="text-leeds-teal mt-0.5">•</span>
                       <span className="leading-snug">{reason}</span>
                     </li>
@@ -267,32 +311,45 @@ export default function ConnectionPage() {
             <ul className="space-y-3 text-xs text-white/80">
               {match.connectionPayload.message && (
                 <li className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">1</span>
-                  {(match as any).connectionPayload.message}
+                  <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                    1
+                  </span>
+                  {match.connectionPayload.message}
                 </li>
               )}
               {match.connectionPayload.nextStep && (
                 <li className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">2</span>
-                  {(match as any).connectionPayload.nextStep}
+                  <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                    2
+                  </span>
+                  {match.connectionPayload.nextStep}
                 </li>
               )}
-              {!match.connectionPayload.message && !match.connectionPayload.nextStep && (
-                <li className="text-xs text-white/80">Connection accepted — send a message to start.</li>
-              )}
+              {!match.connectionPayload.message &&
+                !match.connectionPayload.nextStep && (
+                  <li className="text-xs text-white/80">
+                    Connection accepted — send a message to start.
+                  </li>
+                )}
             </ul>
           ) : (
             <ul className="space-y-3 text-xs text-white/80">
               <li className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">1</span>
+                <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                  1
+                </span>
                 Introduce yourself and your project.
               </li>
               <li className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">2</span>
+                <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                  2
+                </span>
                 Schedule a 15-min intro call.
               </li>
               <li className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">3</span>
+                <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
+                  3
+                </span>
                 Share documents or repo links.
               </li>
             </ul>
