@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 
 const PROFILE_STORAGE_KEY = "leedsHack.profile";
@@ -31,8 +32,10 @@ function getTimeBasedGreeting(): string {
 
 export function Navbar() {
   const { session, isLoading, logout } = useAuth();
+  const pathname = usePathname();
   const [displayName, setDisplayName] = useState(GUEST_NAME);
   const [greeting, setGreeting] = useState<string>(getTimeBasedGreeting);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const getSessionName = () => {
@@ -160,6 +163,10 @@ export function Navbar() {
     };
   }, [session]);
 
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [pathname]);
+
   return (
     <header className="sticky top-0 z-50 w-full bg-leeds-blue/90 backdrop-blur-md shadow-clay-card border-none supports-[backdrop-filter]:bg-leeds-blue/80">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -213,12 +220,99 @@ export function Navbar() {
             )
           )}
 
-          {/* Mobile Menu Button (Placeholder) */}
-          <button className="md:hidden text-white">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12" /><line x1="4" x2="20" y1="6" y2="6" /><line x1="4" x2="20" y1="18" y2="18" /></svg>
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-nav-menu"
+            aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+            className="md:hidden inline-flex items-center justify-center rounded-md p-1 text-white transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-leeds-teal focus-visible:outline-none"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              {isMobileMenuOpen ? (
+                <>
+                  <line x1="18" x2="6" y1="6" y2="18" />
+                  <line x1="6" x2="18" y1="6" y2="18" />
+                </>
+              ) : (
+                <>
+                  <line x1="4" x2="20" y1="12" y2="12" />
+                  <line x1="4" x2="20" y1="6" y2="6" />
+                  <line x1="4" x2="20" y1="18" y2="18" />
+                </>
+              )}
+            </svg>
           </button>
         </div>
       </div>
+
+      {isMobileMenuOpen && (
+        <div
+          id="mobile-nav-menu"
+          className="md:hidden border-t border-white/15 bg-leeds-blue/95 backdrop-blur-md"
+        >
+          <nav className="container mx-auto flex flex-col px-4 py-3 sm:px-6">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="rounded-md px-2 py-2 text-sm font-medium text-white/90 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+
+          <div className="container mx-auto border-t border-white/10 px-4 py-3 sm:px-6">
+            {!isLoading &&
+              (session ? (
+                <div className="flex flex-col gap-3">
+                  <Link
+                    href="/profile"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="text-sm font-medium text-white/90"
+                  >
+                    {greeting} {displayName}
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      logout();
+                    }}
+                    className="inline-flex items-center justify-center rounded-full bg-white/10 border border-white/20 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-white/20 active:scale-95"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <span className="text-sm font-medium text-white/80">
+                    Welcome, {GUEST_NAME}
+                  </span>
+                  <Link
+                    href="/auth"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="inline-flex items-center justify-center rounded-full bg-leeds-teal px-4 py-2 text-sm font-semibold text-leeds-blue-dark shadow-sm transition-transform hover:bg-leeds-teal-dark active:scale-95"
+                  >
+                    Sign In
+                  </Link>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
     </header>
   );
 }
