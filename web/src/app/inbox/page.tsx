@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getInbox, respondToMatch } from "../../../lib/api";
 import { useRequireAuth } from "@/src/hooks/useRequireAuth";
 
@@ -20,8 +21,6 @@ type InboxItem = {
   status: InboxStatus;
 };
 
-const helperId = "u2";
-
 const statusConfig: Record<InboxStatus, { label: string; className: string }> = {
   unread: { label: "Unread", className: "bg-leeds-teal/10 text-leeds-teal" },
   read: { label: "Read", className: "bg-gray-100 text-gray-600" },
@@ -32,6 +31,7 @@ const statusConfig: Record<InboxStatus, { label: string; className: string }> = 
 
 export default function InboxPage() {
   const session = useRequireAuth();
+  const router = useRouter();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -74,8 +74,13 @@ export default function InboxPage() {
     try {
       await respondToMatch(matchId, decision);
 
+      if (decision === "accepted") {
+        router.push(`/connections/${matchId}`);
+        return;
+      }
+
       // Re-fetch inbox so it reflects backend state
-      const refreshed = await getInbox(helperId);
+      const refreshed = await getInbox(session!.userId);
       setItems(refreshed as InboxItem[]);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Could not update match.");
@@ -198,8 +203,8 @@ export default function InboxPage() {
                     <span className="text-xs text-gray-400 font-medium">Declined</span>
                   )}
 
-                  {/* If actionable */}
-                  {item.status === "action-needed" && (
+                  {/* If actionable (any non-resolved status) */}
+                  {!isResolved && (
                     <div className="flex gap-2">
                       <button
                         type="button"
